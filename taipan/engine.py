@@ -787,10 +787,16 @@ class Game:
         if i is None:
             return
         afford = int(self.cash) // self.price[i]
+        # "Max" fills the hold without overloading; "All" spends all
+        # cash, which may overload the ship (original behaviour).
+        fits = min(afford, max(0, self.hold))
+        presets = [{"label": "Max", "value": fits}] if fits > 0 else []
         while True:
             amount = yield from self._ask_num(
                 f"How much {ITEMS[i]} shall I buy, {self.firm}?",
-                hint=f"You can afford {afford:,}")
+                hint=f"You can afford {afford:,} - hold space for "
+                     f"{max(0, self.hold):,}",
+                presets=presets)
             if amount is None:
                 return
             if amount == -1:

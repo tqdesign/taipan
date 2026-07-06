@@ -347,6 +347,28 @@ def test_bank_percentage_presets():
     assert (g.cash, g.bank) == (750, 650)
 
 
+def test_buy_max_preset_respects_hold():
+    g, gen, ev = start_at_menu()
+    g.cash = 10 * g.price[3]                # can afford 10 General Cargo
+    g.hold = 4                              # but only 4 units of space
+    ev = gen.send("b")
+    ev = gen.send("g")
+    assert ev["prompt"]["presets"] == [{"label": "Max", "value": 4}]
+    ev = gen.send("4")                      # take Max
+    assert g.hold == 0 and g.hold_[3] == 4
+    assert is_port_menu(ev)
+
+
+def test_buy_max_preset_capped_by_cash():
+    g, gen, ev = start_at_menu()
+    g.cash = 3 * g.price[0]                 # afford 3 opium
+    g.hold = 60
+    ev = gen.send("b")
+    ev = gen.send("o")
+    assert ev["prompt"]["presets"] == [{"label": "Max", "value": 3}]
+    gen.send(CANCEL)
+
+
 def test_bank_presets_skip_zero_and_duplicates():
     assert Game._pct_presets(0) == [{"label": "0%", "value": 0}]
     assert Game._pct_presets(2) == [{"label": "0%", "value": 0},
