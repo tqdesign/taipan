@@ -60,13 +60,16 @@
   ~^=~^~_~-=~^~ ^ `--------------'~^~=~^~_~^=~^~=~</pre>
     <p class="credits">Created by Art Canfil &middot; Web port of the 1982 Apple ][ classic</p>
     <p class="blink">Press ANY key to start</p>
+    <p class="daily-hint">or press D for today's DAILY CHALLENGE &mdash;
+      every captain sails the same seas</p>
     <p id="resume-hint" class="hidden">A saved voyage was found &mdash;
-      any key resumes it, or press N for a new game</p>
+      any key resumes it, N for a new game, D for the daily</p>
   </section>
 
   <!-- ============ GAME ============ -->
   <section id="game" class="hidden">
-    <header id="firm-line">Firm: <span id="firm"></span></header>
+    <header id="firm-line">Firm: <span id="firm"></span>
+      <span id="mode-tag"></span></header>
 
     <div id="port-board">
       <div class="board-left">
@@ -112,6 +115,13 @@
           <tr><td>Arms</td><td id="price-2" class="num"></td>
               <td>General</td><td id="price-3" class="num"></td></tr>
         </table>
+      </div>
+      <div id="market" class="box">
+        <div class="box-title" id="market-toggle">Market log
+          <span id="market-arrow">[+]</span></div>
+        <div id="market-body" class="hidden">
+          <table id="market-table" class="goods"></table>
+        </div>
       </div>
     </div>
 

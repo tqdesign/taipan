@@ -12,11 +12,13 @@ would be replayed from disk on each worker that sees it, which works but
 wastes CPU and risks interleaved writes to the same save file.
 """
 
+import hashlib
 import json
 import random
 import threading
 import time
 import uuid
+from datetime import date
 from pathlib import Path
 
 import uvicorn
@@ -24,19 +26,34 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from taipan.engine import Game
+from taipan.engine import ENGINE_VERSION, Game
 
 ROOT = Path(__file__).parent
 SAVE_DIR = ROOT / "saves"
 HIGHSCORE_FILE = SAVE_DIR / "highscores.json"
+DAILY_FILE = SAVE_DIR / "dailyscores.json"
 MAX_SESSIONS = 500
 MAX_HIGHSCORES = 10
+
+
+def today() -> str:
+    return date.today().isoformat()
+
+
+def daily_seed(day: str) -> int:
+    """Deterministic seed shared by every player on a given day."""
+    return int(hashlib.sha256(f"taipan-daily-{day}".encode())
+               .hexdigest()[:15], 16)
 
 app = FastAPI(title="Taipan!")
 
 _sessions: dict[str, dict] = {}
 _registry_lock = threading.Lock()   # guards _sessions dict itself
 _score_lock = threading.Lock()      # guards the high-score file
+
+
+class NewRequest(BaseModel):
+    daily: bool = False
 
 
 class StepRequest(BaseModel):
@@ -58,8 +75,9 @@ def _save_path(session_id: str) -> Path:
 
 def _write_save(session_id: str, sess: dict):
     SAVE_DIR.mkdir(exist_ok=True)
-    payload = {"seed": sess["seed"], "inputs": sess["inputs"],
-               "scored": sess["scored"], "updated": time.time()}
+    payload = {"version": ENGINE_VERSION, "seed": sess["seed"],
+               "inputs": sess["inputs"], "scored": sess["scored"],
+               "daily": sess["daily"], "updated": time.time()}
     _save_path(session_id).write_text(json.dumps(payload),
                                       encoding="utf-8")
 
@@ -77,7 +95,14 @@ def _restore(session_id: str) -> dict | None:
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
-    game = Game(seed=data["seed"])
+    if data.get("version") != ENGINE_VERSION:
+        # The engine's prompt/RNG flow changed since this was saved;
+        # replaying would produce a silently wrong game state.
+        path.unlink(missing_ok=True)
+        return None
+    daily = data.get("daily")
+    game = Game(seed=data["seed"],
+                mode="classic" if daily else None, daily=daily)
     gen = game.run()
     event = next(gen)
     for value in data["inputs"]:
@@ -87,7 +112,7 @@ def _restore(session_id: str) -> dict | None:
             break
     sess = {"gen": gen, "last": event, "seed": data["seed"],
             "inputs": data["inputs"], "scored": data.get("scored", False),
-            "lock": threading.Lock()}
+            "daily": daily, "lock": threading.Lock()}
     _register(session_id, sess)
     return sess
 
@@ -105,44 +130,63 @@ def _get_session(session_id: str) -> dict:
 # ----------------------------------------------------------------------
 # High scores
 
-def _load_highscores() -> list:
-    if HIGHSCORE_FILE.exists():
-        return json.loads(HIGHSCORE_FILE.read_text(encoding="utf-8"))
-    return []
+def _load_json(path: Path, default):
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return default
 
 
 def _record_highscore(event: dict):
     prompt = event.get("prompt") or {}
     state = event.get("state") or {}
+    daily = prompt.get("daily")
     entry = {
         "firm": state.get("firm", "?"),
         "score": prompt.get("score", 0),
         "rating": prompt.get("rating", "?"),
+        "mode": prompt.get("mode", "classic"),
         "date": f"{state.get('month', '?')} {state.get('year', '?')}",
         "when": time.strftime("%Y-%m-%d"),
     }
     with _score_lock:
-        scores = _load_highscores()
+        SAVE_DIR.mkdir(exist_ok=True)
+        scores = _load_json(HIGHSCORE_FILE, [])
         scores.append(entry)
         scores.sort(key=lambda s: s["score"], reverse=True)
-        SAVE_DIR.mkdir(exist_ok=True)
         HIGHSCORE_FILE.write_text(
             json.dumps(scores[:MAX_HIGHSCORES], indent=1),
             encoding="utf-8")
+        if daily:
+            boards = _load_json(DAILY_FILE, {})
+            board = boards.get(daily, [])
+            board.append(entry)
+            board.sort(key=lambda s: s["score"], reverse=True)
+            boards[daily] = board[:MAX_HIGHSCORES]
+            # Keep only the last two weeks of daily boards.
+            for key in sorted(boards)[:-14]:
+                del boards[key]
+            DAILY_FILE.write_text(json.dumps(boards, indent=1),
+                                  encoding="utf-8")
 
 
 # ----------------------------------------------------------------------
 # API
 
 @app.post("/api/new")
-def new_game():
-    seed = random.getrandbits(64)
-    game = Game(seed=seed)
+def new_game(req: NewRequest):
+    if req.daily:
+        day = today()
+        seed = daily_seed(day)
+        game = Game(seed=seed, mode="classic", daily=day)
+    else:
+        day = None
+        seed = random.getrandbits(64)
+        game = Game(seed=seed)
     gen = game.run()
     event = next(gen)
     session_id = uuid.uuid4().hex
     sess = {"gen": gen, "last": event, "seed": seed, "inputs": [],
-            "scored": False, "lock": threading.Lock()}
+            "scored": False, "daily": day, "lock": threading.Lock()}
     _register(session_id, sess)
     _write_save(session_id, sess)
     return {"session_id": session_id, "event": event}
@@ -178,8 +222,11 @@ def state(session_id: str):
 
 @app.get("/api/highscores")
 def highscores():
+    day = today()
     with _score_lock:
-        return {"scores": _load_highscores()}
+        return {"scores": _load_json(HIGHSCORE_FILE, []),
+                "daily_date": day,
+                "daily_scores": _load_json(DAILY_FILE, {}).get(day, [])}
 
 
 app.mount("/", StaticFiles(directory=ROOT / "static", html=True),

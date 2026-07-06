@@ -163,11 +163,94 @@ def test_start_options():
         gen = g.run()
         next(gen)
         gen.send("Test Co.")
+        gen.send("1")            # mode: classic
         assert (g.cash, g.debt, g.guns, g.hold, g.bp) != (
             cash, debt, guns, hold, bp)  # not applied until choice made
         gen.send(choice)
         assert (g.cash, g.debt, g.guns, g.hold, g.bp) == (
             cash, debt, guns, hold, bp)
+
+
+# ----------------------------------------------------------------------
+# Modes, daily challenge, and extended-mode rules.
+
+def test_mode_prompt_sets_extended():
+    g = Game(seed=3)
+    gen = g.run()
+    next(gen)
+    ev = gen.send("Test Co.")
+    assert "How will you sail" in ev["prompt"]["text"]
+    gen.send("2")
+    assert g.mode == "extended" and g.extended is True
+
+
+def test_daily_forces_classic_and_skips_mode_prompt():
+    g = Game(seed=3, mode="classic", daily="2026-07-05")
+    gen = g.run()
+    next(gen)
+    ev = gen.send("Test Co.")
+    assert ev["prompt"]["text"].startswith("Do you want to start")
+    assert g.extended is False
+    assert g.snapshot()["daily"] == "2026-07-05"
+
+
+def test_classic_never_reads_extended_rules():
+    """Classic prices must stay in the original ranges even at ports
+    with an extended-mode opium premium."""
+    g = Game(seed=42, mode="classic")
+    g.port = 3   # Nagasaki: 1.5x opium premium in extended
+    for _ in range(50):
+        g.set_prices()
+        base, unit = BASE_PRICE[0][3] // 2, BASE_PRICE[0][0]
+        assert base * unit <= g.price[0] <= base * 3 * unit
+    assert g.wu_rate == 0.10
+
+
+def test_extended_opium_premium():
+    g = Game(seed=42, mode="extended")
+    g.port = 3
+    lo = int(BASE_PRICE[0][3] // 2 * BASE_PRICE[0][0] * 1.5)
+    hi = int(BASE_PRICE[0][3] // 2 * 3 * BASE_PRICE[0][0] * 1.5)
+    for _ in range(50):
+        g.set_prices()
+        assert lo <= g.price[0] <= hi
+
+
+def test_price_memory_records_ports():
+    g = Game(seed=8, mode="classic")
+    for port in (1, 4, 6):
+        g.port = port
+        g.set_prices()
+    seen = g.snapshot()["seen_prices"]
+    assert [s["port"] for s in seen] == ["Hong Kong", "Saigon",
+                                         "Singapore"]
+    assert all(len(s["prices"]) == 4 for s in seen)
+
+
+def test_wu_trust_lowers_rate_in_extended_only():
+    for mode, want in (("extended", 0.08), ("classic", 0.10)):
+        g = Game(seed=3, mode=mode)
+        g.wu_payoffs = 1
+        g.debt, g.cash = 100, 1000
+        gen = g._elder_brother_wu()
+        ev = next(gen)                    # business with Wu?
+        ev = gen.send("y")                # -> repay how much?
+        ev = gen.send("100")              # clears the debt
+        assert "borrow" in ev["prompt"]["text"]
+        try:
+            gen.send("0")
+        except StopIteration:
+            pass
+        assert g.wu_rate == want
+
+
+def test_end_event_carries_history_and_stats():
+    g = Game(seed=3, mode="classic")
+    g.cash = 5000
+    ev = next(g._final_stats())
+    assert ev["prompt"]["kind"] == "end"
+    assert ev["prompt"]["net_history"][-1][1] == 5000
+    assert ev["prompt"]["stats"]["battles"] == 0
 
 
 def test_overload_allowed_but_cannot_sail():

@@ -32,6 +32,14 @@ Cancellation: prompts marked `cancellable` accept `engine.CANCEL` (`"\x1b"`, sen
 
 Player options (fast play, auto-repeat battle orders, sound) are **client-side only** (`taipan_opts` in localStorage) — the engine's pause timeouts are advisory and the battle-orders prompt is detected by its option keys being exactly `f,r,t`, so engine changes aren't needed and saves stay compatible. Auto-repeated orders remember only Fight/Run, never Throw cargo, and are sent after a grace window (1s, 250ms in fast play) so the player can still change orders mid-battle.
 
+## Modes: Classic is sacred, Extended is the sandbox
+
+The player picks **Classic** or **Extended** at game start (`Game.mode` / `Game.extended`; the daily challenge forces classic). Every gameplay addition beyond the 1982 rules must be gated behind `if self.extended` — including its RNG draws, so the classic random stream stays exactly as the original. Extended data lives in `OPIUM_PORTS` (per-port opium premium/seizure strictness) and `HISTORY_EVENTS` (scripted 1860s timeline); extended state includes rumors, temporary `price_mods`, Li Yuen standing (`li_donations`/`li_refusals`), and Wu trust (`wu_rate` drops to 8% after two full payoffs). Price memory (`seen`), voyage `stats`, and `net_history` are mode-neutral (pure observation, no rule changes).
+
+**ENGINE_VERSION** (in engine.py) must be bumped whenever the sequence of prompts or RNG draws changes in any mode — saves are event-sourced replays, and the server discards saves whose version doesn't match rather than replaying them into garbage.
+
+The daily challenge seed is derived from the date server-side (`daily_seed()` in main.py); daily games are classic-only and score onto a per-day board (`saves/dailyscores.json`, pruned to 14 days) as well as the all-time board.
+
 ## Fidelity is the point
 
 `taipan/engine.py` is a faithful port of `reference/taipan-original.bas` (the authoritative Applesoft BASIC listing), with message text and a few clarified behaviors from `reference/taipan-c-port.c` (Jay Link's canonical C port). Formulas (prices, Li Yuen extortion, Wu's 10%/month interest, combat odds, booty, scoring) intentionally match the BASIC source — check changes against those references before "fixing" anything that looks odd (e.g., buying cargo beyond hold capacity is allowed and shows "Overload"; opium seizures only happen outside Hong Kong; `FN R(X) = INT(RND*X)` is `Game.r()`). Where the two references disagree, the BASIC listing wins except where noted in comments (Li Yuen protection decay follows the C port).

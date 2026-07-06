@@ -175,9 +175,9 @@ async function api(path, body) {
   return res.json();
 }
 
-async function newGame() {
+async function newGame(daily = false) {
   $("log").innerHTML = "";
-  const data = await api("/api/new", {});
+  const data = await api("/api/new", { daily });
   sessionId = data.session_id;
   localStorage.setItem(SESSION_KEY, sessionId);
   $("splash").classList.add("hidden");
@@ -226,6 +226,9 @@ async function handleEvent(ev) {
 
 function renderState(st) {
   $("firm").textContent = `${st.firm}, ${st.location}`;
+  $("mode-tag").textContent = st.daily ? `DAILY ${st.daily}`
+    : (st.mode === "extended" ? "EXTENDED" : "");
+  renderMarketLog(st.seen_prices || []);
   for (let i = 0; i < 4; i++) {
     $(`wh-${i}`).textContent = st.warehouse[i].toLocaleString();
     $(`hold-${i}`).textContent = st.hold_items[i].toLocaleString();
@@ -244,6 +247,44 @@ function renderState(st) {
   $("cash").textContent = st.cash_str;
   $("bank").textContent = st.bank_str;
   $("prices").classList.toggle("hidden", !st.prices);
+}
+
+/* ------------------------------------------------------------------ */
+/* Market log: last prices seen per port */
+
+const MARKET_KEY = "taipan_market_open";
+
+function renderMarketLog(seen) {
+  const table = $("market-table");
+  table.innerHTML = "";
+  if (!seen.length) {
+    table.innerHTML = "<tr><td>No ports visited yet.</td></tr>";
+    return;
+  }
+  const head = table.insertRow();
+  for (const h of ["Port", "Opium", "Silk", "Arms", "General", "Seen"]) {
+    const td = head.insertCell();
+    td.textContent = h;
+    td.className = h === "Port" || h === "Seen" ? "" : "num";
+  }
+  head.className = "market-head";
+  for (const s of seen) {
+    const row = table.insertRow();
+    if (s.here) row.className = "market-here";
+    row.insertCell().textContent = s.port + (s.here ? " *" : "");
+    for (const p of s.prices) {
+      const td = row.insertCell();
+      td.textContent = p.toLocaleString();
+      td.className = "num";
+    }
+    row.insertCell().textContent = s.when;
+  }
+}
+
+function toggleMarket(open) {
+  $("market-body").classList.toggle("hidden", !open);
+  $("market-arrow").textContent = open ? "[-]" : "[+]";
+  localStorage.setItem(MARKET_KEY, open ? "1" : "0");
 }
 
 /* ------------------------------------------------------------------ */
@@ -356,20 +397,56 @@ async function runFx(m) {
 /* ------------------------------------------------------------------ */
 /* High scores */
 
-async function showHighscores() {
+async function showHighscores(wasDaily) {
   try {
     const data = await api("/api/highscores");
-    if (!data.scores.length) return;
-    await renderMessage({ text: "* * *  HALL OF FAME  * * *",
-                          cls: "head" });
-    for (let i = 0; i < data.scores.length; i++) {
-      const s = data.scores[i];
-      await renderMessage({
-        text: `${String(i + 1).padStart(2)}. ${s.firm} - `
-              + `${s.score.toLocaleString()} (${s.rating}, ${s.date})`,
-      });
+    const board = async (title, scores) => {
+      if (!scores.length) return;
+      await renderMessage({ text: title, cls: "head" });
+      for (let i = 0; i < scores.length; i++) {
+        const s = scores[i];
+        const tag = s.mode === "extended" ? " [ext]" : "";
+        await renderMessage({
+          text: `${String(i + 1).padStart(2)}. ${s.firm} - `
+                + `${s.score.toLocaleString()} (${s.rating}, `
+                + `${s.date})${tag}`,
+        });
+      }
+    };
+    if (wasDaily) {
+      await board(`* * *  TODAY'S CHALLENGE - ${data.daily_date}  * * *`,
+                  data.daily_scores);
     }
+    await board("* * *  HALL OF FAME  * * *", data.scores);
   } catch (e) { /* scores are optional */ }
+}
+
+function renderNetChart(history) {
+  if (!history || history.length < 2) return;
+  const W = 460, H = 100, PAD = 4;
+  const xs = history.map((h) => h[0]);
+  const ys = history.map((h) => h[1]);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(0, ...ys), yMax = Math.max(1, ...ys);
+  const px = (x) => PAD + ((x - xMin) / Math.max(1, xMax - xMin))
+                        * (W - 2 * PAD);
+  const py = (y) => H - PAD - ((y - yMin) / (yMax - yMin))
+                            * (H - 2 * PAD);
+  const pts = history.map((h) => `${px(h[0]).toFixed(1)},`
+                                 + `${py(h[1]).toFixed(1)}`).join(" ");
+  const zero = py(0);
+  const div = document.createElement("div");
+  div.className = "line chart";
+  div.innerHTML =
+    `<div class="chart-title">Net worth over ${xMax} months</div>`
+    + `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+    + `<line x1="0" y1="${zero}" x2="${W}" y2="${zero}"`
+    + ` class="chart-zero"/>`
+    + `<polyline points="${pts}" class="chart-line"/></svg>`
+    + `<div class="chart-title">peak `
+    + `${Math.max(...ys).toLocaleString()}</div>`;
+  $("log").appendChild(div);
+  $("report").scrollTop = $("report").scrollHeight;
 }
 
 /* ------------------------------------------------------------------ */
@@ -462,7 +539,8 @@ function showPrompt(p) {
 
   if (p.kind === "end") {
     localStorage.removeItem(SESSION_KEY);
-    showHighscores();
+    renderNetChart(p.net_history);
+    showHighscores(!!p.daily);
     const btn = document.createElement("button");
     btn.textContent = "Play again";
     btn.onclick = () => {
@@ -495,7 +573,10 @@ async function checkResume() {
 
 function start(key) {
   started = true;
-  if (pendingResume && key !== "n") {
+  if (key === "d") {
+    pendingResume = null;
+    newGame(true);
+  } else if (pendingResume && key !== "n") {
     resumeGame();
   } else {
     pendingResume = null;
@@ -551,9 +632,10 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  // Clicks on the topbar or inside the options dialog never reach the
-  // game (they must not start it or skip a pause).
-  if (e.target.closest("#topbar") || e.target.closest("#options-panel")) {
+  // Clicks on the topbar, the options dialog, or the market-log toggle
+  // never reach the game (they must not start it or skip a pause).
+  if (e.target.closest("#topbar") || e.target.closest("#options-panel")
+      || e.target.closest("#market")) {
     return;
   }
   if (optionsOpen()) {          // clicking the dimmed backdrop closes
@@ -566,6 +648,12 @@ document.addEventListener("click", (e) => {
   }
   if (prompt && prompt.kind === "pause" && !busy) send("");
 });
+
+/* Market log UI */
+$("market-toggle").addEventListener("click", () => {
+  toggleMarket($("market-body").classList.contains("hidden"));
+});
+toggleMarket(localStorage.getItem(MARKET_KEY) === "1");
 
 /* Options UI */
 $("options-btn").addEventListener("click", openOptions);

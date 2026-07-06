@@ -46,9 +46,26 @@ Plays 200 random games to completion and checks engine invariants.
 
 ## Features
 
-- Faithful 1982 mechanics: port price tables, Li Yuen's extortion and
-  pirate fleets, Elder Brother Wu's 10%/month loans, McHenry's repairs,
-  storms, seizures, muggings, animated sea battles, original scoring.
+- **Classic mode**: faithful 1982 mechanics — port price tables, Li
+  Yuen's extortion and pirate fleets, Elder Brother Wu's 10%/month
+  loans, McHenry's repairs, storms, seizures, muggings, animated sea
+  battles, original scoring.
+- **Extended mode** (chosen at game start): tavern rumors of price
+  spikes (~75% reliable), per-port opium markets (strict ports like
+  Nagasaki pay a premium but seize more; lax Batavia is safe and
+  cheap), prize ships captured after decisive victories, reputations —
+  steady donors become friends of Li Yuen's fleet while repeat
+  refusers get hunted by Captain Feng, and reliable borrowers earn a
+  better rate from Wu — plus scripted history of the 1860s (the
+  Convention of Peking, the Taiping rebellion, and more) moving
+  prices.
+- **Daily challenge** (press D on the splash screen): everyone plays
+  the same seed on the same day, classic rules, with its own
+  leaderboard.
+- **Market log**: a collapsible table remembering the last prices you
+  saw in every port.
+- **Voyage epilogue**: end-of-game statistics (battles, booty,
+  donations, interest paid...) and a net-worth-over-time chart.
 - Games survive refreshes and server restarts: every session is saved
   as (RNG seed + input log) in `saves/` and replayed on demand.
 - Hall of fame: top scores persist across games (`saves/highscores.json`).
