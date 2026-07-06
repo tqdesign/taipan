@@ -381,6 +381,56 @@ def test_transfer_aboard_max_preset_respects_hold():
     assert is_port_menu(ev)
 
 
+def test_voyage_months_matrix_is_sane():
+    from taipan.engine import VOYAGE_MONTHS
+    for a in range(1, 8):
+        assert VOYAGE_MONTHS[a][a] == 0
+        for b in range(1, 8):
+            if a != b:
+                assert 1 <= VOYAGE_MONTHS[a][b] <= 3
+                assert VOYAGE_MONTHS[a][b] == VOYAGE_MONTHS[b][a]
+
+
+def drive_travel(mode, dest, seed):
+    """Run _travel() to completion; returns the game or None if a
+    battle/storm interfered with the clean-voyage assumption."""
+    g = Game(seed=seed, mode=mode)
+    g.debt = 1000
+    gen = g._travel()
+    ev = next(gen)
+    v = dest
+    try:
+        while True:
+            ev = gen.send(v)
+            p = ev["prompt"]
+            if p["kind"] == "choice":     # battle orders: bad seed
+                return None
+            v = ""
+    except StopIteration:
+        pass
+    return g
+
+
+def test_extended_voyage_takes_distance_months():
+    for seed in range(50):
+        g = drive_travel("extended", "7", seed)   # HK -> Batavia: 2 mo
+        if g and g.port == 7:                     # not blown off course
+            assert g.month == 3                   # Jan + 2 months
+            assert g.debt == 1210                 # 10% compounded twice
+            return
+    raise AssertionError("no clean voyage found in 50 seeds")
+
+
+def test_classic_voyage_is_always_one_month():
+    for seed in range(50):
+        g = drive_travel("classic", "7", seed)
+        if g and g.port == 7:
+            assert g.month == 2                   # a single month
+            assert g.debt == 1100
+            return
+    raise AssertionError("no clean voyage found in 50 seeds")
+
+
 def test_extended_caps_fleet_size_classic_does_not():
     from taipan.engine import (GENERIC, LI_YUEN, MAX_GENERIC_FLEET,
                                MAX_LI_YUEN_FLEET)

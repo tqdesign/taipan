@@ -60,6 +60,11 @@ Plays 200 random games to completion and checks engine invariants.
   Convention of Peking, the Taiping rebellion, and more) moving
   prices. Pirate fleets are capped at plausible sizes (30 ordinary /
   50 for Li Yuen), taming the original's late-game 300-ship grinds.
+  Distance matters: voyages take 1-3 months by real sea distance
+  (Shanghai-Nagasaki is a short hop; Batavia is the far end of the
+  world), and every month at sea compounds Wu's interest — long
+  arbitrage runs now have a real cost. Classic keeps the original's
+  one-month voyages.
 - **Daily challenge** (press D on the splash screen): everyone plays
   the same seed on the same day, classic rules, with its own
   leaderboard.

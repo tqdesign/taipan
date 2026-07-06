@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 3
+ENGINE_VERSION = 4
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -60,6 +60,22 @@ WAREHOUSE_CAPACITY = 10000
 # keeps the 1982 behaviour.
 MAX_GENERIC_FLEET = 30
 MAX_LI_YUEN_FLEET = 50
+
+# Voyage length in months between ports (symmetric, 1-indexed), based
+# loosely on real sea distances at 1860s sailing speeds: Shanghai and
+# Nagasaki are neighbours, Batavia is the far end of the world. Classic
+# voyages always take one month, as in 1982.
+VOYAGE_MONTHS = [
+    #      HK Sh Na Sa Ma Si Ba
+    None,
+    [None, 0, 1, 2, 1, 1, 2, 2],   # from Hong Kong
+    [None, 1, 0, 1, 2, 2, 3, 3],   # from Shanghai
+    [None, 2, 1, 0, 3, 2, 3, 3],   # from Nagasaki
+    [None, 1, 2, 3, 0, 1, 1, 2],   # from Saigon
+    [None, 1, 2, 2, 1, 0, 2, 2],   # from Manila
+    [None, 2, 3, 3, 1, 2, 0, 1],   # from Singapore
+    [None, 2, 3, 3, 2, 2, 1, 0],   # from Batavia
+]
 
 # Opium market personality per port: (price premium multiplier,
 # seizure chance denominator - lower is stricter; 0 = never seized).
@@ -963,7 +979,13 @@ class Game:
     # ------------------------------------------------------------------
     # Travel (BASIC 2700-3350 / C quit())
     def _travel(self):
-        options = [{"key": str(i), "label": LOCATIONS[i]}
+        def label(i):
+            if not self.extended:
+                return LOCATIONS[i]
+            m = VOYAGE_MONTHS[self.port][i]
+            return f"{LOCATIONS[i]} ({m} mo)"
+
+        options = [{"key": str(i), "label": label(i)}
                    for i in range(1, 8) if i != self.port]
         self.head("Comprador's Report")
         c = yield from self._ask_choice(
@@ -973,6 +995,10 @@ class Game:
         if c is None:
             return False
         self.dest = int(c)
+        # Extended: far ports take longer (a storm may still blow you
+        # somewhere else, but the sea time is already spent).
+        voyage_months = (VOYAGE_MONTHS[self.port][self.dest]
+                         if self.extended else 1)
         self.port = 0
 
         result = BATTLE_NOT_FINISHED
@@ -1065,27 +1091,33 @@ class Game:
                          f"{LOCATIONS[self.dest]}")
                 yield from self._pause()
 
-        self.month += 1
-        if self.month == 13:
-            self.month = 1
-            self.year += 1
-            self.ec += 10
-            self.ed += 0.5
-            # Base prices drift upward slowly over the years (BASIC 1020)
-            for i in range(4):
-                for p in range(1, 8):
-                    self.base[i][p] += self.r(2)
-        # Wu's rate is 10%/month; a trusted borrower (extended) pays 8%.
-        interest = int(self.debt * self.wu_rate)
-        self.debt += interest
-        self.stats["interest_paid"] += interest
-        earned = int(self.bank * 0.005)
-        self.bank += earned
-        self.stats["bank_interest"] += earned
+        for _ in range(voyage_months):
+            self.month += 1
+            if self.month == 13:
+                self.month = 1
+                self.year += 1
+                self.ec += 10
+                self.ed += 0.5
+                # Base prices drift upward over the years (BASIC 1020)
+                for i in range(4):
+                    for p in range(1, 8):
+                        self.base[i][p] += self.r(2)
+            # Wu charges 10%/month (8% for a trusted borrower); every
+            # month at sea compounds it.
+            interest = int(self.debt * self.wu_rate)
+            self.debt += interest
+            self.stats["interest_paid"] += interest
+            earned = int(self.bank * 0.005)
+            self.bank += earned
+            self.stats["bank_interest"] += earned
 
         self.port = self.dest
         self.dest = 0
-        self.say(f"Arriving at {LOCATIONS[self.port]}...")
+        if voyage_months > 1:
+            self.say(f"Arriving at {LOCATIONS[self.port]} after "
+                     f"{voyage_months} months at sea...")
+        else:
+            self.say(f"Arriving at {LOCATIONS[self.port]}...")
         yield from self._pause(1400)
         return True
 
