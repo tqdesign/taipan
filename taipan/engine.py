@@ -822,7 +822,8 @@ class Game:
 
     @staticmethod
     def _pct_presets(total):
-        presets = []
+        # 0% is the one-click "skip this step" (deposit/withdraw nothing).
+        presets = [{"label": "0%", "value": 0}]
         for pct in (25, 50, 75):
             v = int(total) * pct // 100
             if v > 0 and all(p["value"] != v for p in presets):
