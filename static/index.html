@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taipan!</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="crt">
+
+  <!-- ============ SPLASH ============ -->
+  <section id="splash">
+    <pre class="art">
+ _____  _    ___ ____   _    _   _
+|_   _|/ \  |_ _|  _ \ / \  | \ | |
+  | | / _ \  | || |_) / _ \ |  \| |
+  | |/ ___ \ | ||  __/ ___ \| |\  |
+  |_/_/   \_\___|_| /_/   \_\_| \_|</pre>
+    <p class="subtitle">A game based on the China trade of the 1800's</p>
+    <pre class="art ship">
+          ~~|     ,
+           ,|`-._/|
+         .' |   /||\
+       .'   | ./ ||`\
+      / `-. |/._ ||  \
+     /     `||  `|;-._\
+     |      ||   ||   \
+ ~^~_-~^~=~^~~^= /       ||   ||__  \~^=~^~-~^~_~^~=
+  ~=~^~ _~^~ =~ `--------|`---||  `"-`___~~^~ =_~^=
+ ~ ~^~=~^_~^~ =~ \~~~~~~~'~~~~'~~~~/~~`` ~=~^~ ~^=
+  ~^=~^~_~-=~^~ ^ `--------------'~^~=~^~_~^=~^~=~</pre>
+    <p class="credits">Created by Art Canfil &middot; Web port of the 1982 Apple ][ classic</p>
+    <p class="blink">Press ANY key to start</p>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section id="game" class="hidden">
+    <header id="firm-line">Firm: <span id="firm"></span></header>
+
+    <div id="port-board">
+      <div class="board-left">
+        <div class="box">
+          <div class="box-title">Hong Kong Warehouse</div>
+          <table class="goods">
+            <tr><td>Opium</td><td id="wh-0" class="num"></td>
+                <td class="lbl">In Use:</td><td id="wh-used" class="num"></td></tr>
+            <tr><td>Silk</td><td id="wh-1" class="num"></td>
+                <td class="lbl"></td><td></td></tr>
+            <tr><td>Arms</td><td id="wh-2" class="num"></td>
+                <td class="lbl">Vacant:</td><td id="wh-vacant" class="num"></td></tr>
+            <tr><td>General</td><td id="wh-3" class="num"></td>
+                <td class="lbl"></td><td></td></tr>
+          </table>
+        </div>
+        <div class="box">
+          <div class="box-title">Hold <span id="hold-space" class="inv"></span>
+            <span class="right">Guns <span id="guns" class="inv"></span></span></div>
+          <table class="goods">
+            <tr><td>Opium</td><td id="hold-0" class="num"></td></tr>
+            <tr><td>Silk</td><td id="hold-1" class="num"></td></tr>
+            <tr><td>Arms</td><td id="hold-2" class="num"></td></tr>
+            <tr><td>General</td><td id="hold-3" class="num"></td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="board-right">
+        <div class="cell"><div class="lbl">Date</div><div id="date" class="inv"></div></div>
+        <div class="cell"><div class="lbl">Location</div><div id="location" class="inv"></div></div>
+        <div class="cell"><div class="lbl">Debt</div><div id="debt" class="inv"></div></div>
+        <div class="cell"><div class="lbl">Ship Status</div><div id="status" class="inv"></div></div>
+      </div>
+      <div class="board-bottom">
+        <span>Cash: <span id="cash"></span></span>
+        <span>Bank: <span id="bank"></span></span>
+      </div>
+      <div id="prices" class="box">
+        <div class="box-title">Prices per unit here</div>
+        <table class="goods">
+          <tr><td>Opium</td><td id="price-0" class="num"></td>
+              <td>Silk</td><td id="price-1" class="num"></td></tr>
+          <tr><td>Arms</td><td id="price-2" class="num"></td>
+              <td>General</td><td id="price-3" class="num"></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ SEA BATTLE ============ -->
+    <div id="battle" class="hidden">
+      <div id="battle-top">
+        <span><span id="b-ships"></span> ship<span id="b-plural">s</span> attacking, Taipan!</span>
+        <span class="right">We have <span id="b-guns"></span> gun<span id="b-guns-plural">s</span></span>
+      </div>
+      <div id="battle-orders">Your orders are to: <span id="b-orders"></span></div>
+      <div id="battle-status">Current seaworthiness: <span id="b-seaworthy" class="inv"></span></div>
+      <div id="lorchas"></div>
+      <div id="b-more" class="hidden">+ more ships beyond the horizon</div>
+    </div>
+
+    <div id="report">
+      <div id="log"></div>
+    </div>
+
+    <div id="prompt-bar">
+      <div id="prompt-text"></div>
+      <div id="prompt-hint"></div>
+      <div id="prompt-buttons"></div>
+      <div id="prompt-entry" class="hidden">
+        <span class="cursor">&gt;</span>
+        <input id="prompt-input" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="prompt-pause" class="hidden blink">&#9660;</div>
+    </div>
+  </section>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
