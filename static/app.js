@@ -527,6 +527,7 @@ function keyLabel(opt) {
   } else {
     btn.append(`${key}) ${label}`);
   }
+  if (opt.danger) btn.classList.add("danger");
   return btn;
 }
 

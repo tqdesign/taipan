@@ -761,7 +761,10 @@ class Game:
                            {"key": "w", "label": "Wheedle Wu"},
                            {"key": "q", "label": "Quit trading"}]
                 if self.cash + self.bank - self.debt >= 1_000_000:
-                    options.append({"key": "r", "label": "Retire"})
+                    # danger: the client renders this apart from the
+                    # others so it can't be clicked by accident.
+                    options.append({"key": "r", "label": "Retire",
+                                    "danger": True})
             else:
                 options = [{"key": "b", "label": "Buy"},
                            {"key": "s", "label": "Sell"},
@@ -940,6 +943,10 @@ class Game:
 
     def _retire(self):
         self.head("Comprador's Report")
+        if not (yield from self._ask_yn(
+                f"Retire and count your fortune, {self.firm}? "
+                f"This ends the game.")):
+            return
         self.say("Y o u ' r e   a", cls="big")
         self.say("M I L L I O N A I R E !", cls="big")
         yield from self._pause(3200)

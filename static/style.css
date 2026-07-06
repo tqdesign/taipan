@@ -411,6 +411,19 @@ body {
 
 #prompt-buttons button .key { text-decoration: underline; }
 
+/* Consequential actions (e.g. Retire) sit alone at the far right so
+   they can't be hit by accident. */
+#prompt-buttons button.danger {
+  margin-left: auto;
+  border-color: var(--green-dim);
+  color: var(--green-dim);
+}
+#prompt-buttons button.danger:hover,
+#prompt-buttons button.danger:focus {
+  background: var(--green-dim);
+  color: #02180a;
+}
+
 #prompt-buttons button.cancel {
   border-color: var(--green-dim);
   color: var(--green-dim);

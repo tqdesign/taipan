@@ -381,6 +381,25 @@ def test_transfer_aboard_max_preset_respects_hold():
     assert is_port_menu(ev)
 
 
+def test_retire_requires_confirmation():
+    g, gen, ev = start_at_menu()
+    g.cash = 2_000_000
+    ev = gen.send("v")                      # cycle the bank to rebuild
+    ev = gen.send("0")                      # the menu with Retire in it
+    ev = gen.send("0")
+    retire = [o for o in ev["prompt"]["options"] if o["key"] == "r"]
+    assert retire and retire[0]["danger"] is True
+    ev = gen.send("r")                      # -> are you sure?
+    assert "Retire" in ev["prompt"]["text"]
+    ev = gen.send("n")                      # changed my mind
+    assert is_port_menu(ev)
+    assert g.cash == 2_000_000
+    ev = gen.send("r")
+    ev = gen.send("y")                      # millionaire screen (pause)
+    ev = gen.send("")                       # -> final stats
+    assert ev["prompt"]["kind"] == "end"
+
+
 def test_ack_prompt_carries_message_lines():
     """Loss events yield an 'ack' prompt (modal with OK) that carries
     the message lines so it survives a refresh."""
