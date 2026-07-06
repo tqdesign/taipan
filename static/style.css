@@ -1,5 +1,11 @@
 /* Taipan! - retro green-phosphor CRT look */
 
+@font-face {
+  font-family: "VT323";
+  src: url("fonts/VT323-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
 :root {
   --green: #3bff70;
   --green-dim: #1e9a44;
@@ -14,9 +20,9 @@ html, body { height: 100%; }
 body {
   background: #000;
   color: var(--green);
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 16px;
-  line-height: 1.35;
+  font-family: "VT323", Consolas, "Courier New", monospace;
+  font-size: 20px;
+  line-height: 1.25;
   display: flex;
   justify-content: center;
 }
@@ -59,11 +65,19 @@ body {
 
 /* ============ splash ============ */
 #splash { text-align: center; padding-top: 5vh; }
-#splash .art { display: inline-block; text-align: left; font-size: 15px; }
+#splash .art { display: inline-block; text-align: left; font-size: 18px; }
 #splash .ship { margin-top: 18px; color: var(--green-dim); }
 #splash .subtitle { margin-top: 8px; }
 #splash .credits { margin: 22px 0 10px; color: var(--green-dim); }
-#splash .blink { font-size: 18px; margin-top: 12px; }
+#splash .blink { font-size: 22px; margin-top: 12px; }
+#resume-hint {
+  margin-top: 14px;
+  display: inline-block;
+  background: var(--green);
+  color: #02180a;
+  text-shadow: none;
+  padding: 2px 10px;
+}
 
 /* ============ status board ============ */
 #firm-line {
@@ -71,6 +85,15 @@ body {
   margin-bottom: 8px;
   letter-spacing: 1px;
 }
+
+#mute {
+  float: right;
+  color: var(--green-dim);
+  cursor: pointer;
+  font-size: 16px;
+  user-select: none;
+}
+#mute:hover { color: var(--green); }
 
 #port-board {
   display: grid;
@@ -144,9 +167,9 @@ body {
 .lorcha {
   font-family: inherit;
   white-space: pre;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.1;
-  min-height: 62px;
+  min-height: 70px;
   color: var(--green);
 }
 
@@ -202,8 +225,8 @@ body {
   border: 1px solid var(--green);
   color: var(--green);
   font-family: inherit;
-  font-size: 15px;
-  padding: 4px 12px;
+  font-size: 19px;
+  padding: 5px 14px;
   cursor: pointer;
   text-shadow: inherit;
 }
@@ -217,7 +240,7 @@ body {
 
 #prompt-buttons button .key { text-decoration: underline; }
 
-#prompt-entry { margin-top: 6px; font-size: 17px; }
+#prompt-entry { margin-top: 6px; font-size: 20px; }
 
 #prompt-input {
   background: transparent;
@@ -225,7 +248,7 @@ body {
   border-bottom: 1px solid var(--green-dim);
   color: var(--green);
   font-family: inherit;
-  font-size: 17px;
+  font-size: 20px;
   width: 260px;
   text-shadow: inherit;
 }
@@ -234,9 +257,17 @@ body {
 #prompt-pause { margin-top: 6px; font-size: 18px; }
 
 @media (max-width: 640px) {
+  body { font-size: 17px; }
+  #crt { padding: 10px 10px 24px; }
   #port-board { grid-template-columns: 1fr; }
   .board-right { flex-direction: row; flex-wrap: wrap; }
-  .board-right .cell { min-width: 45%; }
+  .board-right .cell { min-width: 45%; flex: 1 1 45%; }
   #lorchas { grid-template-columns: repeat(5, 1fr); gap: 4px; }
-  .lorcha { font-size: 9px; }
+  .lorcha { font-size: 10px; min-height: 46px; }
+  #splash .art { font-size: 11px; }
+  #report { height: 150px; }
+  /* Bigger touch targets */
+  #prompt-buttons { gap: 10px; }
+  #prompt-buttons button { padding: 10px 16px; min-width: 64px; }
+  #prompt-input { width: 170px; }
 }

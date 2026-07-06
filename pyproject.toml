@@ -1,10 +1,19 @@
 [project]
 name = "taipan"
 version = "0.1.0"
-description = "Add your description here"
+description = "Web port of Art Canfil's classic 1982 trading game Taipan!"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.139.0",
     "uvicorn[standard]>=0.50.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

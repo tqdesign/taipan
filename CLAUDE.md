@@ -10,7 +10,8 @@ A web port of Art Canfil's 1982 Apple II game **Taipan!** — Python game engine
 
 - Run the server: `uv run main.py` (serves http://127.0.0.1:8000)
 - Dev server with reload: `uv run uvicorn main:app --reload`
-- Engine smoke test: `uv run python scripts/smoke.py` — plays 200 random games to completion, asserting invariants (no negative cash/cargo/debt, valid prices). Run this after any engine change.
+- Tests: `uv run pytest` — formulas, scoring, replay determinism, random-play completion. Run after any engine change.
+- Heavier soak test: `uv run python scripts/smoke.py` — 200 random games to completion with invariant checks.
 - Add a dependency: `uv add <package>`
 
 ## Architecture
@@ -23,7 +24,9 @@ Each yielded event contains:
 - `state` — full snapshot (cash, hold, warehouse, prices, date, ship status...)
 - `battle` — sea-battle snapshot or null; the frontend switches screens based on this
 
-`main.py` holds one generator per browser session in an in-memory dict (`/api/new` creates, `/api/step` sends input, sessions are not persisted). `static/app.js` renders events sequentially: it animates message/FX queues, then shows the prompt; the lorcha ship art and sink animation frames are copied from the C port.
+`main.py` holds one generator per browser session in an in-memory dict (`/api/new` creates, `/api/step` sends input). **Persistence is event sourcing**: the engine is deterministic given its seed, so each session is saved to `saves/` as `(seed, input log)` and an unknown session id is restored by replaying the log into a fresh generator. Consequences: never make the engine consume randomness that isn't derived from `self.rng`, and don't reorder RNG calls in existing flows — both would corrupt every in-flight save. Run the server single-worker (live generators are per-process). High scores persist in `saves/highscores.json`, recorded server-side when an `end` event is first produced.
+
+`static/app.js` renders events sequentially: it animates message/FX queues, then shows the prompt; the lorcha ship art and sink animation frames are copied from the C port. The client stores its session id in `localStorage` and resumes via `GET /api/state/{id}` after a refresh. Sound is synthesized with WebAudio (no assets); the font is self-hosted VT323 (OFL license alongside it in `static/fonts/`).
 
 ## Fidelity is the point
 

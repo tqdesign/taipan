@@ -26,7 +26,17 @@ For development with auto-reload:
 uv run uvicorn main:app --reload
 ```
 
+On Windows you can also just double-click `runme.bat`.
+
 ## Test
+
+```sh
+uv run pytest
+```
+
+Covers the original formulas (prices, scoring/ratings, money
+formatting), replay determinism, and random-play completion. For a
+heavier soak test:
 
 ```sh
 uv run python scripts/smoke.py
@@ -34,11 +44,24 @@ uv run python scripts/smoke.py
 
 Plays 200 random games to completion and checks engine invariants.
 
+## Features
+
+- Faithful 1982 mechanics: port price tables, Li Yuen's extortion and
+  pirate fleets, Elder Brother Wu's 10%/month loans, McHenry's repairs,
+  storms, seizures, muggings, animated sea battles, original scoring.
+- Games survive refreshes and server restarts: every session is saved
+  as (RNG seed + input log) in `saves/` and replayed on demand.
+- Hall of fame: top scores persist across games (`saves/highscores.json`).
+- Retro CRT presentation: VT323 terminal font, scanlines, WebAudio
+  sound effects (press M to mute).
+
 ## Structure
 
 - `taipan/engine.py` — the game engine. Runs as a generator that yields
   events (messages + state snapshot + prompt) and receives player input
-  via `.send()`, mirroring the original's linear BASIC flow.
-- `main.py` — FastAPI server; one generator per browser session.
+  via `.send()`, mirroring the original's linear BASIC flow. Fully
+  deterministic given its seed, which is what makes save/replay work.
+- `main.py` — FastAPI server; one generator per browser session,
+  event-sourced saves in `saves/`. Run single-worker (the default).
 - `static/` — the web client (splash, port screen, sea battles).
 - `reference/` — the original sources this port is based on.

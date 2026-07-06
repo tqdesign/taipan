@@ -20,32 +20,121 @@ const SINK_FRAMES = [
   ["        ", "        ", "        ", "        "],
 ];
 
+const SESSION_KEY = "taipan_session";
+const MUTE_KEY = "taipan_muted";
+
 let sessionId = null;
 let prompt = null;       // active prompt descriptor, null while animating
 let busy = false;
 let pauseTimer = null;
 let started = false;
+let pendingResume = null;  // {id, event} when a saved voyage can resume
+
+/* ------------------------------------------------------------------ */
+/* Sound (WebAudio, no assets) */
+
+let audioCtx = null;
+let muted = localStorage.getItem(MUTE_KEY) === "1";
+
+function ac() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+function tone(freq, dur, { type = "square", vol = 0.05, when = 0,
+                           slide = null } = {}) {
+  if (muted) return;
+  try {
+    const ctx = ac();
+    const t0 = ctx.currentTime + when;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (slide) osc.frequency.exponentialRampToValueAtTime(slide, t0 + dur);
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+  } catch (e) { /* audio is a garnish; never break the game */ }
+}
+
+function noise(dur = 0.2, vol = 0.12, when = 0) {
+  if (muted) return;
+  try {
+    const ctx = ac();
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = vol;
+    src.connect(gain).connect(ctx.destination);
+    src.start(ctx.currentTime + when);
+  } catch (e) { /* ignore */ }
+}
+
+const sfx = {
+  shot: () => { tone(880, 0.07, { slide: 180 }); noise(0.05, 0.04); },
+  hit: () => noise(0.3, 0.16),
+  sink: () => tone(320, 0.8, { type: "sawtooth", vol: 0.06, slide: 55 }),
+  alarm: () => {
+    tone(660, 0.12);
+    tone(440, 0.12, { when: 0.16 });
+    tone(660, 0.12, { when: 0.32 });
+  },
+};
+
+function renderMute() {
+  $("mute").textContent = muted ? "[M] sound: OFF" : "[M] sound: ON";
+}
+
+function toggleMute() {
+  muted = !muted;
+  localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  renderMute();
+}
 
 /* ------------------------------------------------------------------ */
 /* API */
 
 async function api(path, body) {
-  const res = await fetch(path, {
+  const opts = body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : "{}",
-  });
+    body: JSON.stringify(body),
+  };
+  const res = await fetch(path, opts);
   if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
   return res.json();
 }
 
 async function newGame() {
   $("log").innerHTML = "";
-  const data = await api("/api/new");
+  const data = await api("/api/new", {});
   sessionId = data.session_id;
+  localStorage.setItem(SESSION_KEY, sessionId);
   $("splash").classList.add("hidden");
   $("game").classList.remove("hidden");
   await handleEvent(data.event);
+}
+
+async function resumeGame() {
+  $("log").innerHTML = "";
+  sessionId = pendingResume.id;
+  const ev = pendingResume.event;
+  pendingResume = null;
+  $("splash").classList.add("hidden");
+  $("game").classList.remove("hidden");
+  await renderMessage({ text: "Welcome back, Taipan. Resuming your "
+                              + "voyage...", cls: "head" });
+  await handleEvent(ev);
 }
 
 async function send(value) {
@@ -164,6 +253,7 @@ async function runFx(m) {
       break;
     case "blast":
       if (el) {
+        sfx.shot();
         for (let k = 0; k < 2; k++) {
           el.classList.add("hit");
           el.textContent = BLAST.join("\n");
@@ -176,6 +266,7 @@ async function runFx(m) {
       break;
     case "sink":
       if (el) {
+        sfx.sink();
         for (const frame of SINK_FRAMES) {
           el.textContent = frame.join("\n");
           await sleep(160);
@@ -190,13 +281,35 @@ async function runFx(m) {
       }
       break;
     case "incoming": {
+      sfx.alarm();
       const crt = $("crt");
       crt.classList.add("incoming");
-      await sleep(600);
+      await sleep(450);
+      sfx.hit();
+      await sleep(150);
       crt.classList.remove("incoming");
       break;
     }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* High scores */
+
+async function showHighscores() {
+  try {
+    const data = await api("/api/highscores");
+    if (!data.scores.length) return;
+    await renderMessage({ text: "* * *  HALL OF FAME  * * *",
+                          cls: "head" });
+    for (let i = 0; i < data.scores.length; i++) {
+      const s = data.scores[i];
+      await renderMessage({
+        text: `${String(i + 1).padStart(2)}. ${s.firm} - `
+              + `${s.score.toLocaleString()} (${s.rating}, ${s.date})`,
+      });
+    }
+  } catch (e) { /* scores are optional */ }
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,6 +378,8 @@ function showPrompt(p) {
     $("prompt-pause").classList.remove("hidden");
     pauseTimer = setTimeout(() => send(""), p.timeout || 1800);
   } else if (p.kind === "end") {
+    localStorage.removeItem(SESSION_KEY);
+    showHighscores();
     const btn = document.createElement("button");
     btn.textContent = "Play again";
     btn.onclick = () => {
@@ -277,12 +392,46 @@ function showPrompt(p) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Startup / resume */
+
+async function checkResume() {
+  const saved = localStorage.getItem(SESSION_KEY);
+  if (!saved) return;
+  try {
+    const data = await api(`/api/state/${saved}`);
+    if (data.event && !data.event.done) {
+      pendingResume = { id: saved, event: data.event };
+      $("resume-hint").classList.remove("hidden");
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch (e) {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+function start(key) {
+  started = true;
+  if (pendingResume && key !== "n") {
+    resumeGame();
+  } else {
+    pendingResume = null;
+    newGame();
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Input wiring */
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") return;
   if (!started) {
-    started = true;
-    newGame();
+    start(e.key.toLowerCase());
+    return;
+  }
+  const typing = document.activeElement === $("prompt-input");
+  if (e.key.toLowerCase() === "m" && !typing) {
+    toggleMute();
     return;
   }
   if (!prompt || busy) return;
@@ -303,17 +452,23 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       send(input.value);
-    } else if (document.activeElement !== input) {
+    } else if (!typing) {
       input.focus();
     }
   }
 });
 
-document.addEventListener("click", () => {
+document.addEventListener("click", (e) => {
+  if (e.target.id === "mute") {
+    toggleMute();
+    return;
+  }
   if (!started) {
-    started = true;
-    newGame();
+    start("");
     return;
   }
   if (prompt && prompt.kind === "pause" && !busy) send("");
 });
+
+renderMute();
+checkResume();

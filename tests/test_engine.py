@@ -1,0 +1,179 @@
+"""Engine tests: original-game formulas, determinism, and random play."""
+
+import random
+
+import pytest
+
+from taipan.engine import BASE_PRICE, Game, fancy
+
+
+# ----------------------------------------------------------------------
+# Money formatting
+
+@pytest.mark.parametrize("value,expected", [
+    (0, "0"),
+    (999, "999"),
+    (999_999, "999,999"),
+    (1_000_000, "1 Million"),
+    (2_500_000, "2.5 Million"),
+    (1_230_000_000, "1.23 Billion"),
+    (5_000_000_000_000, "5 Trillion"),
+])
+def test_fancy(value, expected):
+    assert fancy(value) == expected
+
+
+# ----------------------------------------------------------------------
+# Prices must stay inside the original ranges:
+# price = base//2 * (1..3) * unit_multiplier   (BASIC line 2100)
+
+def test_price_ranges():
+    g = Game(seed=42)
+    for port in range(1, 8):
+        g.port = port
+        for _ in range(50):
+            g.set_prices()
+            for i in range(4):
+                unit = BASE_PRICE[i][0]
+                base = BASE_PRICE[i][port] // 2
+                assert base * unit <= g.price[i] <= base * 3 * unit, (
+                    f"item {i} port {port}: {g.price[i]}")
+
+
+# ----------------------------------------------------------------------
+# Scoring (BASIC 20000): score = net / 100 / months^1.1
+
+def drain(gen):
+    """Run a generator to its first yield and return the event."""
+    return next(gen)
+
+
+@pytest.mark.parametrize("cash,bank,debt,months,rating", [
+    (100_000_000, 0, 0, 12, "Ma Tsu"),          # score ~64,766
+    (20_000_000, 0, 0, 12, "Master Taipan"),    # score ~12,953
+    (3_000_000, 0, 0, 12, "Taipan"),            # score ~1,942
+    (1_000_000, 0, 0, 12, "Compradore"),        # score ~647
+    (200_000, 0, 0, 12, "Galley Hand"),         # score ~129
+    (0, 0, 50_000, 12, "Galley Hand"),          # negative score
+])
+def test_score_and_rating(cash, bank, debt, months, rating):
+    g = Game(seed=1)
+    g.cash, g.bank, g.debt = cash, bank, debt
+    g.month = ((months - 1) % 12) + 1
+    g.year = 1860 + (months - 1) // 12
+    ev = drain(g._final_stats())
+    expected = int((cash + bank - debt) / 100 / months ** 1.1)
+    assert ev["prompt"]["score"] == expected
+    assert ev["prompt"]["rating"] == rating
+    assert ev["done"] is True
+
+
+# ----------------------------------------------------------------------
+# Determinism: same seed + same inputs => same state. This is what makes
+# the server's save/replay persistence correct.
+
+def scripted_run(seed, n_steps=300):
+    rng = random.Random(9999)
+    g = Game(seed=seed)
+    gen = g.run()
+    ev = next(gen)
+    inputs = []
+    for _ in range(n_steps):
+        p = ev["prompt"]
+        if p["kind"] == "end":
+            break
+        if p["kind"] == "text":
+            v = "Determinism Ltd."
+        elif p["kind"] == "choice":
+            v = rng.choice(p["options"])["key"]
+        elif p["kind"] == "number":
+            v = rng.choice(["a", "0", "1", "10", "500"])
+        else:
+            v = ""
+        inputs.append(v)
+        try:
+            ev = gen.send(v)
+        except StopIteration:
+            break
+    return inputs, ev["state"]
+
+
+def replay(seed, inputs):
+    g = Game(seed=seed)
+    gen = g.run()
+    ev = next(gen)
+    for v in inputs:
+        try:
+            ev = gen.send(v)
+        except StopIteration:
+            break
+    return ev["state"]
+
+
+def test_replay_determinism():
+    for seed in (7, 123, 55555):
+        inputs, final_state = scripted_run(seed)
+        assert replay(seed, inputs) == final_state
+
+
+# ----------------------------------------------------------------------
+# Random play: many games must run to completion without violating
+# invariants (a compact version of scripts/smoke.py).
+
+def test_random_games_complete():
+    for seed in range(30):
+        rng = random.Random(seed)
+        g = Game(seed=seed)
+        gen = g.run()
+        ev = next(gen)
+        for step in range(20000):
+            st = ev["state"]
+            assert st["cash"] >= 0 and st["bank"] >= 0 and st["debt"] >= 0
+            assert all(v >= 0 for v in st["hold_items"] + st["warehouse"])
+            assert st["warehouse_used"] <= 10000
+            if st["prices"]:
+                assert all(p > 0 for p in st["prices"])
+            p = ev["prompt"]
+            if p["kind"] == "end":
+                break
+            if p["kind"] == "text":
+                v = "Test Co."
+            elif p["kind"] == "choice":
+                v = rng.choice(p["options"])["key"]
+            elif p["kind"] == "number":
+                v = rng.choice(["a", "0", "3", "100", "999999999"])
+            else:
+                v = ""
+            try:
+                ev = gen.send(v)
+            except StopIteration:
+                break
+        else:
+            pytest.fail(f"game with seed {seed} never ended")
+
+
+# ----------------------------------------------------------------------
+# A couple of specific original behaviours worth pinning down.
+
+def test_start_options():
+    """BASIC 10160/10170: the two starting loadouts."""
+    for choice, cash, debt, guns, hold, bp in [
+            ("1", 400, 5000, 0, 60, 10), ("2", 0, 0, 5, 10, 7)]:
+        g = Game(seed=3)
+        gen = g.run()
+        next(gen)
+        gen.send("Test Co.")
+        assert (g.cash, g.debt, g.guns, g.hold, g.bp) != (
+            cash, debt, guns, hold, bp)  # not applied until choice made
+        gen.send(choice)
+        assert (g.cash, g.debt, g.guns, g.hold, g.bp) == (
+            cash, debt, guns, hold, bp)
+
+
+def test_overload_allowed_but_cannot_sail():
+    """Buying beyond hold capacity is original behaviour ('Overload');
+    the ship must refuse to sail until fixed."""
+    g = Game(seed=3)
+    g.hold_ = [0, 0, 0, 200]
+    g.hold = -140
+    assert g.snapshot()["overloaded"] is True
