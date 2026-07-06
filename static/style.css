@@ -312,6 +312,16 @@ body {
 
 #prompt-buttons button .key { text-decoration: underline; }
 
+#prompt-buttons button.cancel {
+  border-color: var(--green-dim);
+  color: var(--green-dim);
+}
+#prompt-buttons button.cancel:hover,
+#prompt-buttons button.cancel:focus {
+  background: var(--green-dim);
+  color: #02180a;
+}
+
 #prompt-entry { margin-top: 6px; font-size: 20px; }
 
 #prompt-input {

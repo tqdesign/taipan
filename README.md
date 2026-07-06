@@ -58,6 +58,10 @@ Plays 200 random games to completion and checks engine invariants.
   auto-repeating battle orders, so you don't press Fight every round --
   a nod to the original, which repeated your last orders after its
   3-second keyboard poll.
+- ESC cancels any input: back out of buy/sell amounts, bank visits,
+  cargo transfers, Wu negotiations, or the destination prompt without
+  committing to anything. (Yes/No offers treat ESC as No; the one
+  question whose No ends the game insists on an explicit answer.)
 
 ## Structure
 

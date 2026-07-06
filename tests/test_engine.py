@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from taipan.engine import BASE_PRICE, Game, fancy
+from taipan.engine import BASE_PRICE, CANCEL, Game, fancy
 
 
 # ----------------------------------------------------------------------
@@ -177,3 +177,91 @@ def test_overload_allowed_but_cannot_sail():
     g.hold_ = [0, 0, 0, 200]
     g.hold = -140
     assert g.snapshot()["overloaded"] is True
+
+
+# ----------------------------------------------------------------------
+# ESC cancels input flows and unwinds to the enclosing menu.
+
+def to_port_menu(gen, ev):
+    """Answer prompts conservatively until the port menu appears."""
+    for _ in range(60):
+        p = ev["prompt"]
+        if p["kind"] == "choice" and (p["text"] or "").startswith("Shall I"):
+            return ev
+        if p["kind"] == "text":
+            v = "Esc & Co."
+        elif p["kind"] == "choice":
+            keys = [o["key"] for o in p["options"]]
+            v = "1" if "1" in keys and "y" not in keys else "n"
+        elif p["kind"] == "number":
+            v = "0"
+        else:
+            v = ""
+        ev = gen.send(v)
+    raise AssertionError("never reached the port menu")
+
+
+def start_at_menu(seed=11):
+    g = Game(seed=seed)
+    gen = g.run()
+    ev = to_port_menu(gen, next(gen))
+    return g, gen, ev
+
+
+def is_port_menu(ev):
+    p = ev["prompt"]
+    return p["kind"] == "choice" and p["text"].startswith("Shall I")
+
+
+def test_cancel_buy_at_item_and_amount():
+    g, gen, ev = start_at_menu()
+    cash = g.cash
+    ev = gen.send("b")                      # what to buy?
+    assert ev["prompt"]["cancellable"] is True
+    ev = gen.send(CANCEL)                   # never mind
+    assert is_port_menu(ev) and g.cash == cash
+    ev = gen.send("b")
+    ev = gen.send("o")                      # opium -> how much?
+    ev = gen.send(CANCEL)
+    assert is_port_menu(ev) and g.cash == cash and sum(g.hold_) == 0
+
+
+def test_cancel_destination_returns_to_menu():
+    g, gen, ev = start_at_menu()
+    ev = gen.send("q")                      # quit trading -> where to?
+    assert ev["prompt"]["cancellable"] is True
+    ev = gen.send(CANCEL)
+    assert is_port_menu(ev)
+    assert g.port == 1                      # still in Hong Kong
+
+
+def test_cancel_bank_leaves_balances():
+    g, gen, ev = start_at_menu()
+    g.cash, g.bank = 5000, 7000
+    ev = gen.send("v")                      # deposit?
+    ev = gen.send(CANCEL)
+    assert is_port_menu(ev)
+    assert (g.cash, g.bank) == (5000, 7000)
+
+
+def test_wu_bailout_refuses_esc():
+    """The bailout question ends the game on No, so ESC must re-ask
+    rather than count as No."""
+    g = Game(seed=5)
+    gen = g._ask_yn("Are you willing?", esc_is_no=False)
+    ev = next(gen)
+    assert ev["prompt"]["cancellable"] is False
+    ev = gen.send(CANCEL)                   # ignored: asked again
+    assert ev["prompt"]["kind"] == "choice"
+    with pytest.raises(StopIteration) as stop:
+        gen.send("n")
+    assert stop.value.value is False
+
+
+def test_esc_counts_as_no_on_offers():
+    g = Game(seed=5)
+    gen = g._ask_yn("Buy a gun?")
+    next(gen)
+    with pytest.raises(StopIteration) as stop:
+        gen.send(CANCEL)
+    assert stop.value.value is False

@@ -28,6 +28,8 @@ Each yielded event contains:
 
 `static/app.js` renders events sequentially: it animates message/FX queues, then shows the prompt; the lorcha ship art and sink animation frames are copied from the C port. The client stores its session id in `localStorage` and resumes via `GET /api/state/{id}` after a refresh. Sound is synthesized with WebAudio (no assets); the font is self-hosted VT323 (OFL license alongside it in `static/fonts/`).
 
+Cancellation: prompts marked `cancellable` accept `engine.CANCEL` (`"\x1b"`, sent on ESC); `_ask_num`/`_ask_item` then return `None` and callers unwind to the enclosing menu. Yes/No prompts treat ESC as No via `_ask_yn(esc_is_no=True)` — pass `esc_is_no=False` for any question with irreversible stakes (currently only Wu's bailout, where No ends the game). Cancelling the destination prompt returns to the port menu *without* re-running arrival events, and cancelling Throw cargo in battle returns to the orders prompt without the enemy firing.
+
 Player options (fast play, auto-repeat battle orders, sound) are **client-side only** (`taipan_opts` in localStorage) — the engine's pause timeouts are advisory and the battle-orders prompt is detected by its option keys being exactly `f,r,t`, so engine changes aren't needed and saves stay compatible. Auto-repeated orders remember only Fight/Run, never Throw cargo, and are sent after a grace window (1s, 250ms in fast play) so the player can still change orders mid-battle.
 
 ## Fidelity is the point

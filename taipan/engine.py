@@ -19,6 +19,10 @@ import random
 GENERIC = 1
 LI_YUEN = 2
 
+# Sent by the client when the player presses ESC on a cancellable
+# prompt; helpers then return None and the calling flow unwinds.
+CANCEL = "\x1b"
+
 BATTLE_NOT_FINISHED = 0
 BATTLE_WON = 1
 BATTLE_INTERRUPTED = 2
@@ -130,27 +134,37 @@ class Game:
     def _pause(self, ms=1800):
         yield self._event({"kind": "pause", "timeout": ms})
 
-    def _ask_choice(self, text, options, default=None):
+    def _ask_choice(self, text, options, default=None, cancellable=False):
         keys = [o["key"] for o in options]
         while True:
             v = yield self._event({"kind": "choice", "text": text,
-                                   "options": options})
+                                   "options": options,
+                                   "cancellable": cancellable})
+            if cancellable and v == CANCEL:
+                return None
             v = (v or "").strip().lower()
             if v == "" and default is not None:
                 return default
             if v in keys:
                 return v
 
-    def _ask_yn(self, text):
+    def _ask_yn(self, text, esc_is_no=True):
+        """Yes/No question. ESC counts as No, except for questions with
+        irreversible stakes (esc_is_no=False), which insist on Y or N."""
         c = yield from self._ask_choice(text, [{"key": "y", "label": "Yes"},
-                                               {"key": "n", "label": "No"}])
+                                               {"key": "n", "label": "No"}],
+                                        cancellable=esc_is_no)
         return c == "y"
 
-    def _ask_num(self, text, hint=None, allow_all=True):
-        """Number entry; 'A' means All, like the original."""
+    def _ask_num(self, text, hint=None, allow_all=True, cancellable=True):
+        """Number entry; 'A' means All, like the original. Returns None
+        if the player cancels."""
         while True:
             v = yield self._event({"kind": "number", "text": text,
-                                   "hint": hint, "allow_all": allow_all})
+                                   "hint": hint, "allow_all": allow_all,
+                                   "cancellable": cancellable})
+            if cancellable and v == CANCEL:
+                return None
             s = (v or "").strip().lower()
             if allow_all and s in ("a", "all", "*"):
                 return -1
@@ -160,8 +174,8 @@ class Game:
     def _ask_item(self, text):
         options = [{"key": k, "label": name}
                    for k, name in zip("osag", ITEMS)]
-        c = yield from self._ask_choice(text, options)
-        return "osag".index(c)
+        c = yield from self._ask_choice(text, options, cancellable=True)
+        return None if c is None else "osag".index(c)
 
     def _ask_text(self, text, maxlen=22):
         while True:
@@ -238,8 +252,12 @@ class Game:
         try:
             while True:
                 yield from self._arrival_events()
-                yield from self._port_menu()
-                yield from self._travel()
+                while True:
+                    yield from self._port_menu()
+                    # Destination prompt may be cancelled (ESC): back to
+                    # the port menu without re-running arrival events.
+                    if (yield from self._travel()):
+                        break
         except _GameOver:
             pass
         yield from self._final_stats()
@@ -409,6 +427,8 @@ class Game:
                 f"repairs if you wish. How much will ye spend?",
                 hint=f"Full repairs: {fancy(full)} - You have "
                      f"{fancy(self.cash)} in cash")
+            if amount is None:
+                return
             if amount == -1:
                 amount = min(full, self.cash)
             if amount > self.cash:
@@ -435,7 +455,8 @@ class Game:
             if not (yield from self._ask_yn(
                     f"Elder Brother is aware of your plight, {self.firm}. "
                     f"He is willing to loan you an additional {i} if you "
-                    f"will pay back {j}. Are you willing, {self.firm}?")):
+                    f"will pay back {j}. Are you willing, {self.firm}?",
+                    esc_is_no=False)):  # refusing ends the game: no ESC
                 self.say(f"Very well, {self.firm}, the game is over!",
                          cls="warn")
                 yield from self._pause(2600)
@@ -451,6 +472,8 @@ class Game:
                         "How much do you wish to repay him?",
                         hint=f"You owe {fancy(self.debt)} - You have "
                              f"{fancy(self.cash)} in cash")
+                    if amount is None:
+                        return
                     if amount == -1:
                         amount = min(self.cash, self.debt)
                     if amount > self.cash:
@@ -465,6 +488,8 @@ class Game:
                 amount = yield from self._ask_num(
                     "How much do you wish to borrow?",
                     hint=f"He will loan you up to {fancy(self.cash * 2)}")
+                if amount is None:
+                    return
                 if amount == -1:
                     amount = self.cash * 2
                 if amount > self.cash * 2:
@@ -555,11 +580,15 @@ class Game:
     def _buy(self):
         i = yield from self._ask_item(
             f"What do you wish me to buy, {self.firm}?")
+        if i is None:
+            return
         afford = int(self.cash) // self.price[i]
         while True:
             amount = yield from self._ask_num(
                 f"How much {ITEMS[i]} shall I buy, {self.firm}?",
                 hint=f"You can afford {afford:,}")
+            if amount is None:
+                return
             if amount == -1:
                 amount = afford
             if amount <= afford:
@@ -571,10 +600,14 @@ class Game:
     def _sell(self):
         i = yield from self._ask_item(
             f"What do you wish me to sell, {self.firm}?")
+        if i is None:
+            return
         while True:
             amount = yield from self._ask_num(
                 f"How much {ITEMS[i]} shall I sell, {self.firm}?",
                 hint=f"You have {self.hold_[i]:,}")
+            if amount is None:
+                return
             if amount == -1:
                 amount = self.hold_[i]
             if amount <= self.hold_[i]:
@@ -588,6 +621,8 @@ class Game:
             amount = yield from self._ask_num(
                 "How much will you deposit?",
                 hint=f"You have {fancy(self.cash)} in cash")
+            if amount is None:
+                return
             if amount == -1:
                 amount = self.cash
             if amount <= self.cash:
@@ -600,6 +635,8 @@ class Game:
             amount = yield from self._ask_num(
                 "How much will you withdraw?",
                 hint=f"You have {fancy(self.bank)} in the bank")
+            if amount is None:
+                return
             if amount == -1:
                 amount = self.bank
             if amount <= self.bank:
@@ -623,6 +660,8 @@ class Game:
                         f"warehouse, {self.firm}?",
                         hint=f"Aboard: {self.hold_[i]:,} - Warehouse space: "
                              f"{vacant:,}")
+                    if amount is None:
+                        return
                     if amount == -1:
                         amount = min(self.hold_[i], vacant)
                     if amount > self.hold_[i]:
@@ -648,6 +687,8 @@ class Game:
                         f"How much {ITEMS[i]} shall I move aboard ship, "
                         f"{self.firm}?",
                         hint=f"In warehouse: {self.warehouse[i]:,}")
+                    if amount is None:
+                        return
                     if amount == -1:
                         amount = self.warehouse[i]
                     if amount > self.warehouse[i]:
@@ -675,7 +716,9 @@ class Game:
         c = yield from self._ask_choice(
             f"{self.firm}, do you wish me to go to: 1) Hong Kong, "
             f"2) Shanghai, 3) Nagasaki, 4) Saigon, 5) Manila, "
-            f"6) Singapore, or 7) Batavia ?", options)
+            f"6) Singapore, or 7) Batavia ?", options, cancellable=True)
+        if c is None:
+            return False
         self.dest = int(c)
         self.port = 0
 
@@ -762,6 +805,7 @@ class Game:
         self.dest = 0
         self.say(f"Arriving at {LOCATIONS[self.port]}...")
         yield from self._pause(1400)
+        return True
 
     # ------------------------------------------------------------------
     # Sea battle (BASIC 5000-5940 / C sea_battle())
@@ -857,7 +901,13 @@ class Game:
                     self.battle = None
                     return BATTLE_WON
             elif orders == 3:
-                yield from self._throw_cargo()
+                if not (yield from self._throw_cargo()):
+                    # Cancelled: back to the orders prompt; no round
+                    # passes and the enemy holds fire.
+                    orders = prev_orders
+                    self.battle["orders_label"] = ["", "Fight", "Run",
+                                                   "Throw Cargo"][orders]
+                    continue
                 if self._thrown > 0:
                     ok += self._thrown / 10
                     escaped = yield from self._try_escape(ok)
@@ -917,12 +967,16 @@ class Game:
         return False
 
     def _throw_cargo(self):
+        """Returns False if the player cancelled, True otherwise."""
         self._thrown = 0
         options = ([{"key": k, "label": name}
                     for k, name in zip("osag", ITEMS)]
                    + [{"key": "*", "label": "All of it!"}])
         c = yield from self._ask_choice(
-            f"What shall I throw overboard, {self.firm}?", options)
+            f"What shall I throw overboard, {self.firm}?", options,
+            cancellable=True)
+        if c is None:
+            return False
         if c == "*":
             total = sum(self.hold_)
             if total > 0:
@@ -934,6 +988,8 @@ class Game:
             amount = yield from self._ask_num(
                 f"How much, {self.firm}?",
                 hint=f"You have {self.hold_[i]:,} aboard")
+            if amount is None:
+                return False
             if amount == -1 or amount > self.hold_[i]:
                 amount = self.hold_[i]
             self._thrown = amount
@@ -944,6 +1000,7 @@ class Game:
         else:
             self.say(f"There's nothing there, {self.firm}!")
         yield from self._pause(1200)
+        return True
 
     # ------------------------------------------------------------------
     # Final stats (BASIC 20000)

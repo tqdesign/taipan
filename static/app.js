@@ -25,6 +25,7 @@ const MUTE_KEY = "taipan_muted";
 const OPTS_KEY = "taipan_opts";
 const ORDER_KEY = "taipan_last_order";
 const ORDER_LABELS = { f: "Fight", r: "Run", t: "Throw cargo" };
+const CANCEL = "\x1b";  // must match engine.CANCEL
 
 let sessionId = null;
 let prompt = null;       // active prompt descriptor, null while animating
@@ -410,7 +411,10 @@ function showPrompt(p) {
   prompt = p;
   hidePromptUI();
   $("prompt-text").textContent = p.text || "";
-  if (p.hint) $("prompt-hint").textContent = p.hint;
+  const hints = [];
+  if (p.hint) hints.push(p.hint);
+  if (p.cancellable) hints.push("(Esc cancels)");
+  if (hints.length) $("prompt-hint").textContent = hints.join("   ");
 
   if (p.kind === "choice") {
     for (const opt of p.options) {
@@ -445,6 +449,18 @@ function showPrompt(p) {
     pauseTimer = setTimeout(() => send(""),
                             opts.fast ? 40 : (p.timeout || 1800));
   } else if (p.kind === "end") {
+    /* handled below */
+  }
+
+  if (p.cancellable) {
+    const btn = document.createElement("button");
+    btn.className = "cancel";
+    btn.textContent = "Cancel (Esc)";
+    btn.onclick = () => send(CANCEL);
+    $("prompt-buttons").appendChild(btn);
+  }
+
+  if (p.kind === "end") {
     localStorage.removeItem(SESSION_KEY);
     showHighscores();
     const btn = document.createElement("button");
@@ -492,7 +508,12 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (optionsOpen()) closeOptions();
+    if (optionsOpen()) {
+      closeOptions();
+    } else if (prompt && !busy) {
+      if (prompt.cancellable) send(CANCEL);
+      else if (prompt.kind === "pause") send("");
+    }
     return;
   }
   if (optionsOpen()) return;
