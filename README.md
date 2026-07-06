@@ -54,6 +54,10 @@ Plays 200 random games to completion and checks engine invariants.
 - Hall of fame: top scores persist across games (`saves/highscores.json`).
 - Retro CRT presentation: VT323 terminal font, scanlines, WebAudio
   sound effects (press M to mute).
+- Options (top-right corner): fast play (no delays/animations) and
+  auto-repeating battle orders, so you don't press Fight every round --
+  a nod to the original, which repeated your last orders after its
+  3-second keyboard poll.
 
 ## Structure
 

@@ -9,6 +9,34 @@
 <body>
 <div id="crt">
 
+  <div id="topbar">
+    <span id="mute" title="Toggle sound (M)"></span>
+    <span id="options-btn" title="Options">[options]</span>
+  </div>
+
+  <!-- ============ OPTIONS ============ -->
+  <div id="options-overlay" class="hidden">
+    <div id="options-panel">
+      <div class="box-title">O P T I O N S</div>
+      <label>
+        <input type="checkbox" id="opt-fast">
+        Fast play &mdash; no delays or animations
+      </label>
+      <label>
+        <input type="checkbox" id="opt-auto">
+        Auto-repeat battle orders &mdash; keeps Fighting (or Running)
+        without re-pressing; press F/R/T during a battle to change
+      </label>
+      <label>
+        <input type="checkbox" id="opt-sound">
+        Sound effects (M)
+      </label>
+      <div id="options-footer">
+        <button id="options-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ SPLASH ============ -->
   <section id="splash">
     <pre class="art">
@@ -38,8 +66,7 @@
 
   <!-- ============ GAME ============ -->
   <section id="game" class="hidden">
-    <header id="firm-line">Firm: <span id="firm"></span>
-      <span id="mute" title="Toggle sound"></span></header>
+    <header id="firm-line">Firm: <span id="firm"></span></header>
 
     <div id="port-board">
       <div class="board-left">

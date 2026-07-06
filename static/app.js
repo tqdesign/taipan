@@ -22,6 +22,9 @@ const SINK_FRAMES = [
 
 const SESSION_KEY = "taipan_session";
 const MUTE_KEY = "taipan_muted";
+const OPTS_KEY = "taipan_opts";
+const ORDER_KEY = "taipan_last_order";
+const ORDER_LABELS = { f: "Fight", r: "Run", t: "Throw cargo" };
 
 let sessionId = null;
 let prompt = null;       // active prompt descriptor, null while animating
@@ -29,6 +32,61 @@ let busy = false;
 let pauseTimer = null;
 let started = false;
 let pendingResume = null;  // {id, event} when a saved voyage can resume
+
+/* ------------------------------------------------------------------ */
+/* Options */
+
+let opts = { fast: false, autoOrders: false };
+try {
+  opts = { ...opts, ...JSON.parse(localStorage.getItem(OPTS_KEY) || "{}") };
+} catch (e) { /* corrupted storage; keep defaults */ }
+
+function saveOpts() {
+  localStorage.setItem(OPTS_KEY, JSON.stringify(opts));
+}
+
+// Effect/animation duration, collapsed in fast play.
+function fxd(ms) {
+  return opts.fast ? Math.max(15, (ms / 6) | 0) : ms;
+}
+
+function optionsOpen() {
+  return !$("options-overlay").classList.contains("hidden");
+}
+
+function renderOptions() {
+  $("opt-fast").checked = opts.fast;
+  $("opt-auto").checked = opts.autoOrders;
+  $("opt-sound").checked = !muted;
+}
+
+function openOptions() {
+  renderOptions();
+  $("options-overlay").classList.remove("hidden");
+}
+
+function closeOptions() {
+  $("options-overlay").classList.add("hidden");
+}
+
+function isBattleOrders(p) {
+  return p && p.kind === "choice"
+    && p.options.map((o) => o.key).join("") === "frt";
+}
+
+function rememberedOrder() {
+  const o = localStorage.getItem(ORDER_KEY);
+  return o === "r" ? "r" : "f";   // only Fight/Run auto-repeat
+}
+
+function submitChoice(key) {
+  // Remember Fight/Run so auto-repeat keeps issuing the same orders.
+  // Throw cargo is a one-shot action and is never auto-repeated.
+  if (isBattleOrders(prompt) && (key === "f" || key === "r")) {
+    localStorage.setItem(ORDER_KEY, key);
+  }
+  send(key);
+}
 
 /* ------------------------------------------------------------------ */
 /* Sound (WebAudio, no assets) */
@@ -99,6 +157,7 @@ function toggleMute() {
   muted = !muted;
   localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
   renderMute();
+  if (optionsOpen()) renderOptions();
 }
 
 /* ------------------------------------------------------------------ */
@@ -238,7 +297,7 @@ async function renderMessage(m) {
   log.appendChild(div);
   while (log.children.length > 250) log.removeChild(log.firstChild);
   $("report").scrollTop = $("report").scrollHeight;
-  await sleep(70);
+  if (!opts.fast) await sleep(70);
 }
 
 async function runFx(m) {
@@ -248,7 +307,7 @@ async function runFx(m) {
     case "appear":
       if (el) {
         el.textContent = LORCHA.join("\n");
-        await sleep(90);
+        await sleep(fxd(90));
       }
       break;
     case "blast":
@@ -257,10 +316,10 @@ async function runFx(m) {
         for (let k = 0; k < 2; k++) {
           el.classList.add("hit");
           el.textContent = BLAST.join("\n");
-          await sleep(110);
+          await sleep(fxd(110));
           el.classList.remove("hit");
           el.textContent = LORCHA.join("\n");
-          await sleep(90);
+          await sleep(fxd(90));
         }
       }
       break;
@@ -269,7 +328,7 @@ async function runFx(m) {
         sfx.sink();
         for (const frame of SINK_FRAMES) {
           el.textContent = frame.join("\n");
-          await sleep(160);
+          await sleep(fxd(160));
         }
         el.textContent = "";
       }
@@ -277,16 +336,16 @@ async function runFx(m) {
     case "clear":
       if (el) {
         el.textContent = "";
-        await sleep(90);
+        await sleep(fxd(90));
       }
       break;
     case "incoming": {
       sfx.alarm();
       const crt = $("crt");
       crt.classList.add("incoming");
-      await sleep(450);
+      await sleep(fxd(450));
       sfx.hit();
-      await sleep(150);
+      await sleep(fxd(150));
       crt.classList.remove("incoming");
       break;
     }
@@ -356,8 +415,15 @@ function showPrompt(p) {
   if (p.kind === "choice") {
     for (const opt of p.options) {
       const btn = keyLabel(opt);
-      btn.onclick = () => send(opt.key);
+      btn.onclick = () => submitChoice(opt.key);
       $("prompt-buttons").appendChild(btn);
+    }
+    if (isBattleOrders(p) && opts.autoOrders) {
+      const order = rememberedOrder();
+      $("prompt-hint").textContent =
+        `auto: ${ORDER_LABELS[order]} - press F/R/T to change`;
+      pauseTimer = setTimeout(() => send(order),
+                              opts.fast ? 250 : 1000);
     }
   } else if (p.kind === "number" || p.kind === "text") {
     const entry = $("prompt-entry");
@@ -376,7 +442,8 @@ function showPrompt(p) {
     }
   } else if (p.kind === "pause") {
     $("prompt-pause").classList.remove("hidden");
-    pauseTimer = setTimeout(() => send(""), p.timeout || 1800);
+    pauseTimer = setTimeout(() => send(""),
+                            opts.fast ? 40 : (p.timeout || 1800));
   } else if (p.kind === "end") {
     localStorage.removeItem(SESSION_KEY);
     showHighscores();
@@ -424,7 +491,11 @@ function start(key) {
 /* Input wiring */
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") return;
+  if (e.key === "Escape") {
+    if (optionsOpen()) closeOptions();
+    return;
+  }
+  if (optionsOpen()) return;
   if (!started) {
     start(e.key.toLowerCase());
     return;
@@ -443,7 +514,7 @@ document.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (prompt.options.some((o) => o.key === k)) {
       e.preventDefault();
-      send(k);
+      submitChoice(k);
     } else if (e.key === "Enter") {
       send("");
     }
@@ -459,8 +530,13 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  if (e.target.id === "mute") {
-    toggleMute();
+  // Clicks on the topbar or inside the options dialog never reach the
+  // game (they must not start it or skip a pause).
+  if (e.target.closest("#topbar") || e.target.closest("#options-panel")) {
+    return;
+  }
+  if (optionsOpen()) {          // clicking the dimmed backdrop closes
+    closeOptions();
     return;
   }
   if (!started) {
@@ -468,6 +544,29 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (prompt && prompt.kind === "pause" && !busy) send("");
+});
+
+/* Options UI */
+$("options-btn").addEventListener("click", openOptions);
+$("options-close").addEventListener("click", closeOptions);
+$("mute").addEventListener("click", toggleMute);
+$("opt-fast").addEventListener("change", (e) => {
+  opts.fast = e.target.checked;
+  saveOpts();
+  // A pause may be counting down with the old delay; re-arm it.
+  if (prompt && prompt.kind === "pause" && !busy) {
+    clearPause();
+    pauseTimer = setTimeout(() => send(""), opts.fast ? 40 : 800);
+  }
+});
+$("opt-auto").addEventListener("change", (e) => {
+  opts.autoOrders = e.target.checked;
+  saveOpts();
+});
+$("opt-sound").addEventListener("change", (e) => {
+  muted = !e.target.checked;
+  localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  renderMute();
 });
 
 renderMute();
