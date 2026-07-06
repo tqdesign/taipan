@@ -58,7 +58,8 @@ Plays 200 random games to completion and checks engine invariants.
   refusers get hunted by Captain Feng, and reliable borrowers earn a
   better rate from Wu — plus scripted history of the 1860s (the
   Convention of Peking, the Taiping rebellion, and more) moving
-  prices.
+  prices. Pirate fleets are capped at plausible sizes (30 ordinary /
+  50 for Li Yuen), taming the original's late-game 300-ship grinds.
 - **Daily challenge** (press D on the splash screen): everyone plays
   the same seed on the same day, classic rules, with its own
   leaderboard.

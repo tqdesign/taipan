@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 2
+ENGINE_VERSION = 3
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -52,6 +52,14 @@ WAREHOUSE_CAPACITY = 10000
 
 # ---------------------------------------------------------------------
 # Extended mode data. Classic mode must never read these.
+
+# The original scales fleet size with your ship's capacity, which grows
+# without bound - late-game battles against 300+ ships are a grind, not
+# a threat (incoming fire is capped at 15 shooters regardless). Extended
+# mode caps fleets at sizes a lone trader could plausibly meet; classic
+# keeps the 1982 behaviour.
+MAX_GENERIC_FLEET = 30
+MAX_LI_YUEN_FLEET = 50
 
 # Opium market personality per port: (price premium multiplier,
 # seizure chance denominator - lower is stricter; 0 = never seized).
@@ -970,7 +978,7 @@ class Game:
         result = BATTLE_NOT_FINISHED
         self.head("Captain's Report")
         if self.r(self.bp) == 0:
-            n = self.r(self.capacity / 10 + self.guns) + 1
+            n = self._fleet_size(GENERIC)
             self.say(f"{n} hostile ship{'s' if n != 1 else ''} "
                      f"approaching, {self.firm}!!", cls="warn")
             yield from self._pause()
@@ -998,7 +1006,7 @@ class Game:
                          "They remember your generosity and let us pass!")
                 yield from self._pause()
             else:
-                n = self.r(self.capacity / 5 + self.guns) + 5
+                n = self._fleet_size(LI_YUEN)
                 if hunted:
                     n = n * 3 // 2
                     self.say('Captain Feng leads them, Taipan - Li Yuen '
@@ -1080,6 +1088,16 @@ class Game:
         self.say(f"Arriving at {LOCATIONS[self.port]}...")
         yield from self._pause(1400)
         return True
+
+    def _fleet_size(self, battle_id):
+        """How many pirates show up (BASIC 3120/3230): scales with your
+        ship's capacity and guns. Extended mode caps the runaway
+        late-game fleets; classic is unbounded, as in 1982."""
+        if battle_id == GENERIC:
+            n = self.r(self.capacity / 10 + self.guns) + 1
+            return min(n, MAX_GENERIC_FLEET) if self.extended else n
+        n = self.r(self.capacity / 5 + self.guns) + 5
+        return min(n, MAX_LI_YUEN_FLEET) if self.extended else n
 
     # ------------------------------------------------------------------
     # Sea battle (BASIC 5000-5940 / C sea_battle())

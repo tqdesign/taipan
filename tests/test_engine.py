@@ -381,6 +381,27 @@ def test_transfer_aboard_max_preset_respects_hold():
     assert is_port_menu(ev)
 
 
+def test_extended_caps_fleet_size_classic_does_not():
+    from taipan.engine import (GENERIC, LI_YUEN, MAX_GENERIC_FLEET,
+                               MAX_LI_YUEN_FLEET)
+    big_classic, big_li = 0, 0
+    for mode in ("classic", "extended"):
+        g = Game(seed=99, mode=mode)
+        g.capacity, g.guns = 5000, 20    # a late-game leviathan
+        for _ in range(300):
+            n_gen = g._fleet_size(GENERIC)
+            n_li = g._fleet_size(LI_YUEN)
+            if mode == "extended":
+                assert n_gen <= MAX_GENERIC_FLEET
+                assert n_li <= MAX_LI_YUEN_FLEET
+            else:
+                big_classic = max(big_classic, n_gen)
+                big_li = max(big_li, n_li)
+    # classic keeps the original unbounded scaling
+    assert big_classic > MAX_GENERIC_FLEET
+    assert big_li > MAX_LI_YUEN_FLEET
+
+
 def test_retire_requires_confirmation():
     g, gen, ev = start_at_menu()
     g.cash = 2_000_000
