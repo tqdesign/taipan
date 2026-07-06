@@ -80,6 +80,15 @@ body {
 }
 .daily-hint { margin-top: 8px; color: var(--green-dim); }
 
+#challenge-hint {
+  margin-top: 14px;
+  display: inline-block;
+  background: var(--green);
+  color: #02180a;
+  text-shadow: none;
+  padding: 2px 10px;
+}
+
 #topbar #mode-tag {
   color: var(--green);
   cursor: default;

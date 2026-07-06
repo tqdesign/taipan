@@ -40,6 +40,10 @@ The player picks **Classic** or **Extended** at game start (`Game.mode` / `Game.
 
 The daily challenge seed is derived from the date server-side (`daily_seed()` in main.py); daily games are classic-only and score onto a per-day board (`saves/dailyscores.json`, pruned to 14 days) as well as the all-time board.
 
+**Challenge links** (async PvP): `POST /api/challenge` snapshots a *finished* session's seed, mode, and the creator's score/net-worth curve into `saves/challenges/<id>.json`; `/api/new {challenge: id}` starts a game with that seed and forced mode (the mode prompt is skipped, so a challenge input log has one fewer entry than a normal game's — `test_challenge_flow_is_deterministic` pins this). The seed is never returned by the info endpoint. Attempts are recorded on the challenge's own board at game end. Save files now carry `mode` and `challenge` so restores rebuild forced-mode games correctly.
+
+Deployment: Dockerfile provided (single worker; `HOST`/`PORT` env; volume at `/app/saves`). `prune_saves()` runs at import (TTL + count cap on session saves), and `/api/new` is per-IP rate-limited (`NEW_GAMES_PER_MINUTE`). Server tests (`tests/test_server.py`) isolate all file paths to a tmp dir via monkeypatched module globals — keep new file paths going through those module-level constants.
+
 ## Fidelity is the point
 
 `taipan/engine.py` is a faithful port of `reference/taipan-original.bas` (the authoritative Applesoft BASIC listing), with message text and a few clarified behaviors from `reference/taipan-c-port.c` (Jay Link's canonical C port). Formulas (prices, Li Yuen extortion, Wu's 10%/month interest, combat odds, booty, scoring) intentionally match the BASIC source — check changes against those references before "fixing" anything that looks odd (e.g., buying cargo beyond hold capacity is allowed and shows "Overload"; opium seizures only happen outside Hong Kong; `FN R(X) = INT(RND*X)` is `Game.r()`). Where the two references disagree, the BASIC listing wins except where noted in comments (Li Yuen protection decay follows the C port).

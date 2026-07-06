@@ -80,6 +80,30 @@ Plays 200 random games to completion and checks engine invariants.
 - **Ghost race**: your best run's net-worth curve overlays the
   end-of-game chart, and the market log shows live whether you're
   ahead of or behind your record pace.
+- **Challenge links (async PvP)**: after any finished game, "Challenge
+  a friend" copies a link. Whoever opens it sails the *same seas*
+  (same seed, same mode) against your ghost — your net-worth pace
+  shown live and on their chart — and lands on that challenge's own
+  board. Retry as often as pride demands.
+
+## Deploy
+
+The app ships with a `Dockerfile` (single worker by design — live
+game generators are per-process):
+
+```sh
+docker build -t taipan .
+docker run -p 8000:8000 -v taipan-saves:/app/saves taipan
+```
+
+`HOST`/`PORT` are read from the environment. Persist `/app/saves` on a
+volume: it holds sessions, hall-of-fame boards, achievements, and
+challenges. Basic abuse protection is built in (per-IP rate limit on
+new games, save-file TTL and count caps), but there is no
+authentication — scores are honor-system firm names.
+
+Works as-is on Fly.io, Railway, or Render: point the platform at the
+Dockerfile, attach a small volume at `/app/saves`, done.
 - **Daily challenge** (press D on the splash screen): everyone plays
   the same seed on the same day, classic rules, with its own
   leaderboard.

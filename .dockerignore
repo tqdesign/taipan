@@ -1,0 +1,11 @@
+.git
+.venv
+saves
+reference
+tests
+scripts
+runme.bat
+CLAUDE.md
+*.md
+!README.md
+__pycache__

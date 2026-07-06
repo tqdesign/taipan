@@ -34,6 +34,8 @@ let busy = false;
 let pauseTimer = null;
 let started = false;
 let pendingResume = null;  // {id, event} when a saved voyage can resume
+let challengeId = null;    // set when playing someone's challenge link
+let challengeInfo = null;  // {mode, creator: {firm, score, net_history}}
 
 /* ------------------------------------------------------------------ */
 /* Options */
@@ -176,14 +178,30 @@ async function api(path, body) {
   return res.json();
 }
 
-async function newGame(daily = false) {
+async function newGame(daily = false, challenge = null) {
   $("log").innerHTML = "";
-  const data = await api("/api/new", { daily });
+  if (!challenge) {
+    challengeId = null;
+    challengeInfo = null;
+  }
+  const data = await api("/api/new", { daily, challenge });
   sessionId = data.session_id;
   localStorage.setItem(SESSION_KEY, sessionId);
   $("splash").classList.add("hidden");
   $("game").classList.remove("hidden");
+  if (challenge && challengeInfo) {
+    await renderMessage({
+      text: `CHALLENGE: beat ${challengeInfo.creator.firm}'s score of `
+            + `${challengeInfo.creator.score.toLocaleString()} on the `
+            + `same seas. Good joss!`, cls: "head" });
+  }
   await handleEvent(data.event);
+}
+
+async function fetchChallengeInfo(cid) {
+  const res = await fetch(`/api/challenge/${cid}`);
+  if (!res.ok) throw new Error("no such challenge");
+  return res.json();
 }
 
 async function resumeGame() {
@@ -234,25 +252,38 @@ function loadBest() {
 }
 
 function renderPace(st) {
-  const best = loadBest();
   const el = $("pace");
-  if (!best || !best.net_history || st.time == null) {
+  // In a challenge, race the challenger's ghost; otherwise your best.
+  let curve, label;
+  if (challengeInfo && challengeInfo.creator.net_history.length) {
+    curve = challengeInfo.creator.net_history;
+    label = `${challengeInfo.creator.firm}'s pace (score `
+      + `${challengeInfo.creator.score.toLocaleString()})`;
+  } else {
+    const best = loadBest();
+    if (!best || !best.net_history) {
+      el.classList.add("hidden");
+      return;
+    }
+    curve = best.net_history;
+    label = `Record pace (score ${best.score.toLocaleString()})`;
+  }
+  if (st.time == null) {
     el.classList.add("hidden");
     return;
   }
-  let bestNet = null;
-  for (const [t, net] of best.net_history) {
-    if (t <= st.time) bestNet = net;
+  let ghostNet = null;
+  for (const [t, net] of curve) {
+    if (t <= st.time) ghostNet = net;
     else break;
   }
-  if (bestNet === null) {
+  if (ghostNet === null) {
     el.classList.add("hidden");
     return;
   }
-  const diff = st.net - bestNet;
-  el.textContent = `Record pace (score ${best.score.toLocaleString()}): `
-    + `${Math.abs(diff).toLocaleString()} `
-    + `${diff >= 0 ? "AHEAD of" : "behind"} your best run`;
+  const diff = st.net - ghostNet;
+  el.textContent = `${label}: ${Math.abs(diff).toLocaleString()} `
+    + `${diff >= 0 ? "AHEAD" : "behind"}`;
   el.classList.remove("hidden");
 }
 
@@ -261,7 +292,8 @@ let lastFirm = "Taipan";
 function renderState(st) {
   lastFirm = st.firm;
   $("firm").textContent = `${st.firm}, ${st.location}`;
-  $("mode-tag").textContent = st.daily ? `DAILY ${st.daily}`
+  $("mode-tag").textContent = challengeId ? "CHALLENGE"
+    : st.daily ? `DAILY ${st.daily}`
     : (st.mode === "extended" ? "EXTENDED" : "");
   renderMarketLog(st.seen_prices || []);
   renderPace(st);
@@ -502,6 +534,32 @@ async function openScores() {
   $("scores-overlay").classList.remove("hidden");
 }
 
+async function showChallengeBoard(myScore) {
+  try {
+    const info = await fetchChallengeInfo(challengeId);
+    const c = info.creator;
+    await renderMessage({ text: "* * *  CHALLENGE BOARD  * * *",
+                          cls: "head" });
+    const beat = myScore > c.score;
+    await renderMessage({
+      text: beat
+        ? `You BEAT ${c.firm}'s ${c.score.toLocaleString()}! `
+          + `The seas are yours, Taipan!`
+        : `${c.firm}'s ${c.score.toLocaleString()} stands. `
+          + `Their ghost still laughs.`,
+      cls: beat ? "big" : "normal" });
+    const entries = [{ firm: `${c.firm} (challenger)`, score: c.score,
+                       rating: c.rating }].concat(info.attempts);
+    entries.sort((a, b) => b.score - a.score);
+    for (let i = 0; i < Math.min(entries.length, 10); i++) {
+      const s = entries[i];
+      await renderMessage({
+        text: `${String(i + 1).padStart(2)}. ${s.firm} - `
+              + `${s.score.toLocaleString()} (${s.rating})` });
+    }
+  } catch (e) { /* board is garnish */ }
+}
+
 async function showHighscores(wasDaily) {
   try {
     const data = await api("/api/highscores");
@@ -714,15 +772,38 @@ function showPrompt(p) {
   if (p.kind === "end") {
     localStorage.removeItem(SESSION_KEY);
     const best = loadBest();
-    renderNetChart(p.net_history,
-                   best && best.net_history ? best.net_history : null);
+    const ghost = (challengeInfo
+                   && challengeInfo.creator.net_history.length)
+      ? challengeInfo.creator.net_history
+      : (best && best.net_history ? best.net_history : null);
+    renderNetChart(p.net_history, ghost);
     if (!best || p.score > best.score) {
       try {
         localStorage.setItem(BEST_KEY, JSON.stringify(
           { score: p.score, net_history: p.net_history }));
       } catch (e) { /* storage full; the ghost can wait */ }
     }
+    if (challengeId) {
+      showChallengeBoard(p.score);
+    }
     showHighscores(!!p.daily);
+    const shareBtn = document.createElement("button");
+    shareBtn.textContent = "Challenge a friend";
+    shareBtn.onclick = async () => {
+      try {
+        const d = await api("/api/challenge",
+                            { session_id: sessionId });
+        const url = `${location.origin}/?challenge=${d.challenge_id}`;
+        await navigator.clipboard.writeText(url);
+        shareBtn.textContent = "Link copied!";
+      } catch (e) {
+        shareBtn.textContent = "Failed - try again";
+      }
+      setTimeout(() => {
+        shareBtn.textContent = "Challenge a friend";
+      }, 2000);
+    };
+    $("prompt-buttons").appendChild(shareBtn);
     const logBtn = document.createElement("button");
     logBtn.textContent = "Captain's Log";
     logBtn.onclick = () => openJournal(
@@ -730,6 +811,17 @@ function showPrompt(p) {
       `The voyages of ${lastFirm} - score ${p.score.toLocaleString()} `
       + `(${p.rating})`);
     $("prompt-buttons").appendChild(logBtn);
+    if (challengeId) {
+      const retryBtn = document.createElement("button");
+      retryBtn.textContent = "Retry challenge";
+      const cid = challengeId;
+      retryBtn.onclick = () => {
+        sessionId = null;
+        prompt = null;
+        newGame(false, cid);
+      };
+      $("prompt-buttons").appendChild(retryBtn);
+    }
     const btn = document.createElement("button");
     btn.textContent = "Play again";
     btn.onclick = () => {
@@ -750,7 +842,8 @@ async function checkResume() {
   try {
     const data = await api(`/api/state/${saved}`);
     if (data.event && !data.event.done) {
-      pendingResume = { id: saved, event: data.event };
+      pendingResume = { id: saved, event: data.event,
+                        challenge: data.challenge };
       $("resume-hint").classList.remove("hidden");
     } else {
       localStorage.removeItem(SESSION_KEY);
@@ -760,12 +853,38 @@ async function checkResume() {
   }
 }
 
+async function checkChallengeLink() {
+  const cid = new URLSearchParams(location.search).get("challenge");
+  if (!cid) return;
+  try {
+    challengeInfo = await fetchChallengeInfo(cid);
+    challengeId = cid;
+    const c = challengeInfo.creator;
+    $("challenge-hint").textContent =
+      `A CHALLENGE from ${c.firm} (score `
+      + `${c.score.toLocaleString()}, ${c.rating}) - any key sails `
+      + `the same seas against their ghost`;
+    $("challenge-hint").classList.remove("hidden");
+  } catch (e) {
+    challengeId = null;
+  }
+}
+
 function start(key) {
   started = true;
-  if (key === "d") {
+  if (challengeId && key !== "n") {
+    pendingResume = null;
+    newGame(false, challengeId);
+  } else if (key === "d") {
     pendingResume = null;
     newGame(true);
   } else if (pendingResume && key !== "n") {
+    if (pendingResume.challenge) {
+      challengeId = pendingResume.challenge;
+      fetchChallengeInfo(challengeId)
+        .then((info) => { challengeInfo = info; })
+        .catch(() => {});
+    }
     resumeGame();
   } else {
     pendingResume = null;
@@ -903,3 +1022,4 @@ $("opt-sound").addEventListener("change", (e) => {
 
 renderMute();
 checkResume();
+checkChallengeLink();
