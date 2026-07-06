@@ -99,8 +99,15 @@ docker run -p 8000:8000 -v taipan-saves:/app/saves taipan
 `HOST`/`PORT` are read from the environment. Persist `/app/saves` on a
 volume: it holds sessions, hall-of-fame boards, achievements, and
 challenges. Basic abuse protection is built in (per-IP rate limit on
-new games, save-file TTL and count caps), but there is no
-authentication — scores are honor-system firm names.
+new games, save-file TTL and count caps, challenge boards label repeat
+tries), but there is no authentication — scores are honor-system firm
+names.
+
+The daily-challenge seed is salted with a server secret so it can't be
+derived from this (public) source code and rehearsed offline. Set
+`DAILY_SALT` in the environment, or a random salt is generated once
+and kept in `saves/daily_salt.txt` (keep it stable or the day's seed
+changes).
 
 Works as-is on Fly.io, Railway, or Render: point the platform at the
 Dockerfile, attach a small volume at `/app/saves`, done.

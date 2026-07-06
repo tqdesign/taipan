@@ -553,9 +553,10 @@ async function showChallengeBoard(myScore) {
     entries.sort((a, b) => b.score - a.score);
     for (let i = 0; i < Math.min(entries.length, 10); i++) {
       const s = entries[i];
+      const tries = s.attempt > 1 ? `, try #${s.attempt}` : "";
       await renderMessage({
         text: `${String(i + 1).padStart(2)}. ${s.firm} - `
-              + `${s.score.toLocaleString()} (${s.rating})` });
+              + `${s.score.toLocaleString()} (${s.rating}${tries})` });
     }
   } catch (e) { /* board is garnish */ }
 }

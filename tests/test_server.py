@@ -80,10 +80,23 @@ def test_challenge_flow_is_deterministic(client):
     assert ev2["prompt"]["kind"] == "end"
     assert ev2["prompt"]["score"] == score    # same seas, same fate
 
-    # The attempt landed on the challenge board.
+    # The attempt landed on the challenge board, numbered.
     info = client.get(f"/api/challenge/{cid}").json()
     assert len(info["attempts"]) == 1
     assert info["attempts"][0]["score"] == score
+    assert info["attempts"][0]["attempt"] == 1
+
+    # A second try by the same firm is labelled as such.
+    d = client.post("/api/new", json={"challenge": cid}).json()
+    sid3, ev3 = d["session_id"], d["event"]
+    for text, v in log:
+        if "How will you sail" in text:
+            continue
+        ev3 = client.post(
+            "/api/step",
+            json={"session_id": sid3, "value": v}).json()["event"]
+    info = client.get(f"/api/challenge/{cid}").json()
+    assert sorted(a["attempt"] for a in info["attempts"]) == [1, 2]
 
 
 def test_challenge_requires_finished_game(client):
@@ -110,6 +123,27 @@ def test_rate_limit(client, monkeypatch):
     codes = [client.post("/api/new", json={}).status_code
              for _ in range(4)]
     assert codes == [200, 200, 200, 429]
+
+
+def test_daily_seed_is_salted(client, monkeypatch):
+    """The daily seed must not be derivable from the source alone."""
+    monkeypatch.setenv("DAILY_SALT", "salt-one")
+    a = main.daily_seed("2026-07-06")
+    monkeypatch.setenv("DAILY_SALT", "salt-two")
+    b = main.daily_seed("2026-07-06")
+    assert a != b
+    # unsalted formula from the repo must NOT match either
+    import hashlib
+    unsalted = int(hashlib.sha256(b"taipan-daily-2026-07-06")
+                   .hexdigest()[:15], 16)
+    assert unsalted not in (a, b)
+
+
+def test_daily_salt_persists_when_generated(client, monkeypatch):
+    monkeypatch.delenv("DAILY_SALT", raising=False)
+    first = main.daily_seed("2026-07-06")
+    second = main.daily_seed("2026-07-06")   # same generated salt file
+    assert first == second
 
 
 def test_session_survives_memory_eviction(client):

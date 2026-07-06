@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import threading
 import time
 import uuid
@@ -63,10 +64,28 @@ def today() -> str:
     return date.today().isoformat()
 
 
+def _daily_salt() -> str:
+    """Server-side secret mixed into the daily seed. Without it, anyone
+    could derive tomorrow's seed from this (public) source code and
+    rehearse the whole day offline. Set DAILY_SALT in the environment,
+    or a random one is generated once and kept in saves/."""
+    salt = os.environ.get("DAILY_SALT")
+    if salt:
+        return salt
+    path = SAVE_DIR / "daily_salt.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    salt = secrets.token_hex(16)
+    SAVE_DIR.mkdir(exist_ok=True)
+    path.write_text(salt, encoding="utf-8")
+    return salt
+
+
 def daily_seed(day: str) -> int:
     """Deterministic seed shared by every player on a given day."""
-    return int(hashlib.sha256(f"taipan-daily-{day}".encode())
-               .hexdigest()[:15], 16)
+    return int(hashlib.sha256(
+        f"taipan-daily-{_daily_salt()}-{day}".encode())
+        .hexdigest()[:15], 16)
 
 
 class NewRequest(BaseModel):
@@ -274,10 +293,16 @@ def _record_attempt(challenge_id: str, event: dict):
             data = _load_challenge(challenge_id)
         except HTTPException:
             return
+        # Per-firm try counter: a 40th-try score shouldn't masquerade
+        # as a first-try score (best effort - names are honor-system).
+        firm = state.get("firm", "?")
+        tries = data.setdefault("tries", {})
+        tries[firm] = tries.get(firm, 0) + 1
         data["attempts"].append({
-            "firm": state.get("firm", "?"),
+            "firm": firm,
             "score": prompt.get("score", 0),
             "rating": prompt.get("rating", "?"),
+            "attempt": tries[firm],
             "when": time.strftime("%Y-%m-%d"),
         })
         data["attempts"].sort(key=lambda s: s["score"], reverse=True)
