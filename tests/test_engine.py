@@ -369,6 +369,18 @@ def test_buy_max_preset_capped_by_cash():
     gen.send(CANCEL)
 
 
+def test_transfer_aboard_max_preset_respects_hold():
+    g, gen, ev = start_at_menu()
+    g.warehouse[0] = 500                    # opium stockpiled ashore
+    g.hold = 60
+    ev = gen.send("t")                      # transfer cargo
+    assert "move aboard ship" in ev["prompt"]["text"]
+    assert ev["prompt"]["presets"] == [{"label": "Max", "value": 60}]
+    ev = gen.send("60")                     # take Max
+    assert g.hold == 0 and g.hold_[0] == 60 and g.warehouse[0] == 440
+    assert is_port_menu(ev)
+
+
 def test_bank_presets_skip_zero_and_duplicates():
     assert Game._pct_presets(0) == [{"label": "0%", "value": 0}]
     assert Game._pct_presets(2) == [{"label": "0%", "value": 0},

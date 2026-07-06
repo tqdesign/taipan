@@ -905,10 +905,17 @@ class Game:
                     break
             if self.warehouse[i] > 0:
                 while True:
+                    # "Max" fills the hold without overloading; "All"
+                    # moves the lot, which may overload the ship.
+                    fits = min(self.warehouse[i], max(0, self.hold))
+                    presets = ([{"label": "Max", "value": fits}]
+                               if fits > 0 else [])
                     amount = yield from self._ask_num(
                         f"How much {ITEMS[i]} shall I move aboard ship, "
                         f"{self.firm}?",
-                        hint=f"In warehouse: {self.warehouse[i]:,}")
+                        hint=f"In warehouse: {self.warehouse[i]:,} - "
+                             f"hold space for {max(0, self.hold):,}",
+                        presets=presets)
                     if amount is None:
                         return
                     if amount == -1:
