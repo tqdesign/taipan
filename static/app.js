@@ -397,6 +397,53 @@ async function runFx(m) {
 /* ------------------------------------------------------------------ */
 /* High scores */
 
+function scoresOpen() {
+  return !$("scores-overlay").classList.contains("hidden");
+}
+
+function closeScores() {
+  $("scores-overlay").classList.add("hidden");
+}
+
+function scoreLine(s, i) {
+  const tag = s.mode === "extended" ? " [ext]" : "";
+  return `${String(i + 1).padStart(2)}. ${s.firm} - `
+       + `${s.score.toLocaleString()} (${s.rating}, ${s.date})${tag}`;
+}
+
+async function openScores() {
+  let data;
+  try {
+    data = await api("/api/highscores");
+  } catch (e) {
+    return;
+  }
+  const body = $("scores-body");
+  body.innerHTML = "";
+  const board = (title, scores) => {
+    const h = document.createElement("div");
+    h.className = "board-title";
+    h.textContent = title;
+    body.appendChild(h);
+    if (!scores.length) {
+      const d = document.createElement("div");
+      d.className = "line empty";
+      d.textContent = "No entries yet. The seas await, Taipan.";
+      body.appendChild(d);
+      return;
+    }
+    scores.forEach((s, i) => {
+      const d = document.createElement("div");
+      d.className = "line";
+      d.textContent = scoreLine(s, i);
+      body.appendChild(d);
+    });
+  };
+  board(`Today's Challenge - ${data.daily_date}`, data.daily_scores);
+  board("All-Time", data.scores);
+  $("scores-overlay").classList.remove("hidden");
+}
+
 async function showHighscores(wasDaily) {
   try {
     const data = await api("/api/highscores");
@@ -404,13 +451,7 @@ async function showHighscores(wasDaily) {
       if (!scores.length) return;
       await renderMessage({ text: title, cls: "head" });
       for (let i = 0; i < scores.length; i++) {
-        const s = scores[i];
-        const tag = s.mode === "extended" ? " [ext]" : "";
-        await renderMessage({
-          text: `${String(i + 1).padStart(2)}. ${s.firm} - `
-                + `${s.score.toLocaleString()} (${s.rating}, `
-                + `${s.date})${tag}`,
-        });
+        await renderMessage({ text: scoreLine(scores[i], i) });
       }
     };
     if (wasDaily) {
@@ -616,7 +657,9 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (optionsOpen()) {
+    if (scoresOpen()) {
+      closeScores();
+    } else if (optionsOpen()) {
       closeOptions();
     } else if (prompt && !busy) {
       if (prompt.cancellable) send(CANCEL);
@@ -624,7 +667,7 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (optionsOpen()) return;
+  if (optionsOpen() || scoresOpen()) return;
   if (!started) {
     start(e.key.toLowerCase());
     return;
@@ -667,10 +710,15 @@ document.addEventListener("click", (e) => {
   // Clicks on the topbar, dialogs, or the market-log toggle never
   // reach the game (they must not start it or skip a pause).
   if (e.target.closest("#topbar") || e.target.closest("#options-panel")
-      || e.target.closest("#market") || e.target.closest("#ack-panel")) {
+      || e.target.closest("#market") || e.target.closest("#ack-panel")
+      || e.target.closest("#scores-panel")) {
     return;
   }
-  if (optionsOpen()) {          // clicking the dimmed backdrop closes
+  if (scoresOpen()) {           // clicking the dimmed backdrop closes
+    closeScores();
+    return;
+  }
+  if (optionsOpen()) {
     closeOptions();
     return;
   }
@@ -682,6 +730,10 @@ document.addEventListener("click", (e) => {
 });
 
 $("ack-ok").addEventListener("click", confirmAck);
+
+/* Hall of Fame UI */
+$("scores-btn").addEventListener("click", openScores);
+$("scores-close").addEventListener("click", closeScores);
 
 /* Market log UI */
 $("market-toggle").addEventListener("click", () => {

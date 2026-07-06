@@ -80,16 +80,18 @@ body {
 }
 .daily-hint { margin-top: 8px; color: var(--green-dim); }
 
-#mode-tag {
-  float: right;
-  color: var(--green-dim);
-  font-size: 15px;
-  letter-spacing: 0;
+#topbar #mode-tag {
+  color: var(--green);
+  cursor: default;
+  letter-spacing: 1px;
 }
+#topbar #mode-tag:hover { color: var(--green); }
+#mode-tag:empty { display: none; }
 
 /* ============ status board ============ */
 #firm-line {
   text-align: center;
+  margin-top: 26px;
   margin-bottom: 8px;
   letter-spacing: 1px;
 }
@@ -100,6 +102,8 @@ body {
   top: 8px;
   right: 14px;
   display: flex;
+  align-items: center;
+  white-space: nowrap;
   gap: 14px;
   font-size: 16px;
   color: var(--green-dim);
@@ -157,6 +161,35 @@ body {
   font-family: inherit;
   font-size: 18px;
 }
+
+#scores-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+}
+
+#scores-panel {
+  background: var(--bg);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 24px rgba(59, 255, 112, 0.35);
+  padding: 18px 24px;
+  max-width: 560px;
+  width: calc(100% - 40px);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+#scores-body .line { margin: 3px 0; white-space: nowrap; }
+#scores-body .board-title {
+  margin: 14px 0 6px;
+  text-decoration: underline;
+  letter-spacing: 1px;
+}
+#scores-body .empty { color: var(--green-dim); }
 
 #ack-overlay {
   position: fixed;

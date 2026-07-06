@@ -10,8 +10,19 @@
 <div id="crt">
 
   <div id="topbar">
+    <span id="mode-tag"></span>
+    <span id="scores-btn" title="Hall of Fame">[scores]</span>
     <span id="mute" title="Toggle sound (M)"></span>
     <span id="options-btn" title="Options">[options]</span>
+  </div>
+
+  <!-- ============ HALL OF FAME ============ -->
+  <div id="scores-overlay" class="hidden">
+    <div id="scores-panel">
+      <div class="box-title">H A L L&nbsp;&nbsp;O F&nbsp;&nbsp;F A M E</div>
+      <div id="scores-body"></div>
+      <div id="options-footer"><button id="scores-close">Close</button></div>
+    </div>
   </div>
 
   <!-- ============ OPTIONS ============ -->
@@ -76,8 +87,7 @@
 
   <!-- ============ GAME ============ -->
   <section id="game" class="hidden">
-    <header id="firm-line">Firm: <span id="firm"></span>
-      <span id="mode-tag"></span></header>
+    <header id="firm-line">Firm: <span id="firm"></span></header>
 
     <div id="port-board">
       <div class="board-left">
