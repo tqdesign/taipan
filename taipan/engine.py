@@ -233,13 +233,16 @@ class Game:
                                         cancellable=esc_is_no)
         return c == "y"
 
-    def _ask_num(self, text, hint=None, allow_all=True, cancellable=True):
+    def _ask_num(self, text, hint=None, allow_all=True, cancellable=True,
+                 presets=None):
         """Number entry; 'A' means All, like the original. Returns None
-        if the player cancels."""
+        if the player cancels. `presets` are one-click amounts shown as
+        buttons: [{"label": "25%", "value": 1234}, ...]."""
         while True:
             v = yield self._event({"kind": "number", "text": text,
                                    "hint": hint, "allow_all": allow_all,
-                                   "cancellable": cancellable})
+                                   "cancellable": cancellable,
+                                   "presets": presets or []})
             if cancellable and v == CANCEL:
                 return None
             s = (v or "").strip().lower()
@@ -817,11 +820,21 @@ class Game:
         self.cash += amount * self.price[i]
         self.hold += amount
 
+    @staticmethod
+    def _pct_presets(total):
+        presets = []
+        for pct in (25, 50, 75):
+            v = int(total) * pct // 100
+            if v > 0 and all(p["value"] != v for p in presets):
+                presets.append({"label": f"{pct}%", "value": v})
+        return presets
+
     def _visit_bank(self):
         while True:
             amount = yield from self._ask_num(
                 "How much will you deposit?",
-                hint=f"You have {fancy(self.cash)} in cash")
+                hint=f"You have {fancy(self.cash)} in cash",
+                presets=self._pct_presets(self.cash))
             if amount is None:
                 return
             if amount == -1:
@@ -835,7 +848,8 @@ class Game:
         while True:
             amount = yield from self._ask_num(
                 "How much will you withdraw?",
-                hint=f"You have {fancy(self.bank)} in the bank")
+                hint=f"You have {fancy(self.bank)} in the bank",
+                presets=self._pct_presets(self.bank))
             if amount is None:
                 return
             if amount == -1:

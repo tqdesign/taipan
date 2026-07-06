@@ -515,11 +515,20 @@ function showPrompt(p) {
     input.placeholder = p.kind === "number"
       ? (p.allow_all !== false ? "amount, or A for all" : "amount") : "";
     input.focus();
-    if (p.kind === "number" && p.allow_all !== false) {
-      const btn = document.createElement("button");
-      btn.textContent = "All";
-      btn.onclick = () => send("a");
-      $("prompt-buttons").appendChild(btn);
+    if (p.kind === "number") {
+      for (const pre of p.presets || []) {
+        const btn = document.createElement("button");
+        btn.textContent = pre.label;
+        btn.title = pre.value.toLocaleString();
+        btn.onclick = () => send(String(pre.value));
+        $("prompt-buttons").appendChild(btn);
+      }
+      if (p.allow_all !== false) {
+        const btn = document.createElement("button");
+        btn.textContent = "All";
+        btn.onclick = () => send("a");
+        $("prompt-buttons").appendChild(btn);
+      }
     }
   } else if (p.kind === "pause") {
     $("prompt-pause").classList.remove("hidden");

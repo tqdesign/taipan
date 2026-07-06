@@ -327,6 +327,29 @@ def test_cancel_bank_leaves_balances():
     assert (g.cash, g.bank) == (5000, 7000)
 
 
+def test_bank_percentage_presets():
+    g, gen, ev = start_at_menu()
+    g.cash, g.bank = 1000, 400
+    ev = gen.send("v")                      # deposit prompt
+    assert ev["prompt"]["presets"] == [
+        {"label": "25%", "value": 250},
+        {"label": "50%", "value": 500},
+        {"label": "75%", "value": 750}]
+    ev = gen.send("250")                    # take the 25% preset
+    assert (g.cash, g.bank) == (750, 650)
+    assert ev["prompt"]["presets"] == [     # withdraw prompt: % of bank
+        {"label": "25%", "value": 162},
+        {"label": "50%", "value": 325},
+        {"label": "75%", "value": 487}]
+    gen.send("0")
+    assert (g.cash, g.bank) == (750, 650)
+
+
+def test_bank_presets_skip_zero_and_duplicates():
+    assert Game._pct_presets(0) == []
+    assert Game._pct_presets(2) == [{"label": "50%", "value": 1}]
+
+
 def test_wu_bailout_refuses_esc():
     """The bailout question ends the game on No, so ESC must re-ask
     rather than count as No."""
