@@ -23,6 +23,7 @@ const SINK_FRAMES = [
 const SESSION_KEY = "taipan_session";
 const MUTE_KEY = "taipan_muted";
 const OPTS_KEY = "taipan_opts";
+const BEST_KEY = "taipan_best";
 const ORDER_KEY = "taipan_last_order";
 const ORDER_LABELS = { f: "Fight", r: "Run", t: "Throw cargo" };
 const CANCEL = "\x1b";  // must match engine.CANCEL
@@ -224,11 +225,55 @@ async function handleEvent(ev) {
   showPrompt(ev.prompt);
 }
 
+function loadBest() {
+  try {
+    return JSON.parse(localStorage.getItem(BEST_KEY));
+  } catch (e) {
+    return null;
+  }
+}
+
+function renderPace(st) {
+  const best = loadBest();
+  const el = $("pace");
+  if (!best || !best.net_history || st.time == null) {
+    el.classList.add("hidden");
+    return;
+  }
+  let bestNet = null;
+  for (const [t, net] of best.net_history) {
+    if (t <= st.time) bestNet = net;
+    else break;
+  }
+  if (bestNet === null) {
+    el.classList.add("hidden");
+    return;
+  }
+  const diff = st.net - bestNet;
+  el.textContent = `Record pace (score ${best.score.toLocaleString()}): `
+    + `${Math.abs(diff).toLocaleString()} `
+    + `${diff >= 0 ? "AHEAD of" : "behind"} your best run`;
+  el.classList.remove("hidden");
+}
+
+let lastFirm = "Taipan";
+
 function renderState(st) {
+  lastFirm = st.firm;
   $("firm").textContent = `${st.firm}, ${st.location}`;
   $("mode-tag").textContent = st.daily ? `DAILY ${st.daily}`
     : (st.mode === "extended" ? "EXTENDED" : "");
   renderMarketLog(st.seen_prices || []);
+  renderPace(st);
+  const venture = $("venture");
+  const bits = [];
+  if (st.charter) bits.push(`<span class="charter">Charter: `
+                            + `${st.charter}</span>`);
+  if (st.refits && st.refits.length) {
+    bits.push(`Refits: ${st.refits.join(", ")}`);
+  }
+  venture.innerHTML = bits.join(" &nbsp;&middot;&nbsp; ");
+  venture.classList.toggle("hidden", bits.length === 0);
   for (let i = 0; i < 4; i++) {
     $(`wh-${i}`).textContent = st.warehouse[i].toLocaleString();
     $(`hold-${i}`).textContent = st.hold_items[i].toLocaleString();
@@ -441,6 +486,19 @@ async function openScores() {
   };
   board(`Today's Challenge - ${data.daily_date}`, data.daily_scores);
   board("All-Time", data.scores);
+  const ach = Object.entries(data.achievements || {});
+  if (ach.length) {
+    const h = document.createElement("div");
+    h.className = "board-title";
+    h.textContent = "Honors Unlocked";
+    body.appendChild(h);
+    for (const [, a] of ach) {
+      const d = document.createElement("div");
+      d.className = "line";
+      d.textContent = `* ${a.name} - ${a.desc} (first: ${a.firm})`;
+      body.appendChild(d);
+    }
+  }
   $("scores-overlay").classList.remove("hidden");
 }
 
@@ -462,32 +520,79 @@ async function showHighscores(wasDaily) {
   } catch (e) { /* scores are optional */ }
 }
 
-function renderNetChart(history) {
+function renderNetChart(history, ghost) {
   if (!history || history.length < 2) return;
   const W = 460, H = 100, PAD = 4;
-  const xs = history.map((h) => h[0]);
-  const ys = history.map((h) => h[1]);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMin = Math.min(0, ...ys), yMax = Math.max(1, ...ys);
+  const all = ghost ? history.concat(ghost) : history;
+  const xMin = Math.min(...all.map((h) => h[0]));
+  const xMax = Math.max(...all.map((h) => h[0]));
+  const yMin = Math.min(0, ...all.map((h) => h[1]));
+  const yMax = Math.max(1, ...all.map((h) => h[1]));
   const px = (x) => PAD + ((x - xMin) / Math.max(1, xMax - xMin))
                         * (W - 2 * PAD);
   const py = (y) => H - PAD - ((y - yMin) / (yMax - yMin))
                             * (H - 2 * PAD);
-  const pts = history.map((h) => `${px(h[0]).toFixed(1)},`
-                                 + `${py(h[1]).toFixed(1)}`).join(" ");
+  const line = (h) => h.map((p) => `${px(p[0]).toFixed(1)},`
+                                   + `${py(p[1]).toFixed(1)}`).join(" ");
   const zero = py(0);
   const div = document.createElement("div");
   div.className = "line chart";
   div.innerHTML =
-    `<div class="chart-title">Net worth over ${xMax} months</div>`
+    `<div class="chart-title">Net worth over `
+    + `${Math.max(...history.map((h) => h[0]))} months`
+    + `${ghost ? " (dim line: your best run)" : ""}</div>`
     + `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
     + `<line x1="0" y1="${zero}" x2="${W}" y2="${zero}"`
     + ` class="chart-zero"/>`
-    + `<polyline points="${pts}" class="chart-line"/></svg>`
+    + (ghost ? `<polyline points="${line(ghost)}" class="chart-ghost"/>`
+             : "")
+    + `<polyline points="${line(history)}" class="chart-line"/></svg>`
     + `<div class="chart-title">peak `
-    + `${Math.max(...ys).toLocaleString()}</div>`;
+    + `${Math.max(...history.map((h) => h[1])).toLocaleString()}</div>`;
   $("log").appendChild(div);
   $("report").scrollTop = $("report").scrollHeight;
+}
+
+/* ------------------------------------------------------------------ */
+/* Captain's log */
+
+function journalOpen() {
+  return !$("journal-overlay").classList.contains("hidden");
+}
+
+function closeJournal() {
+  $("journal-overlay").classList.add("hidden");
+}
+
+let journalText = "";
+
+function openJournal(journal, header) {
+  const body = $("journal-body");
+  body.innerHTML = "";
+  const lines = [header];
+  const hd = document.createElement("div");
+  hd.className = "line head";
+  hd.textContent = header;
+  body.appendChild(hd);
+  for (const e of journal || []) {
+    const div = document.createElement("div");
+    div.className = "line";
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = e.when;
+    div.appendChild(when);
+    div.appendChild(document.createTextNode(e.text));
+    body.appendChild(div);
+    lines.push(`${e.when} - ${e.text}`);
+  }
+  if (!(journal || []).length) {
+    const div = document.createElement("div");
+    div.className = "line";
+    div.textContent = "An uneventful career. The sea kept its stories.";
+    body.appendChild(div);
+  }
+  journalText = lines.join("\n");
+  $("journal-overlay").classList.remove("hidden");
 }
 
 /* ------------------------------------------------------------------ */
@@ -608,8 +713,23 @@ function showPrompt(p) {
 
   if (p.kind === "end") {
     localStorage.removeItem(SESSION_KEY);
-    renderNetChart(p.net_history);
+    const best = loadBest();
+    renderNetChart(p.net_history,
+                   best && best.net_history ? best.net_history : null);
+    if (!best || p.score > best.score) {
+      try {
+        localStorage.setItem(BEST_KEY, JSON.stringify(
+          { score: p.score, net_history: p.net_history }));
+      } catch (e) { /* storage full; the ghost can wait */ }
+    }
     showHighscores(!!p.daily);
+    const logBtn = document.createElement("button");
+    logBtn.textContent = "Captain's Log";
+    logBtn.onclick = () => openJournal(
+      p.journal,
+      `The voyages of ${lastFirm} - score ${p.score.toLocaleString()} `
+      + `(${p.rating})`);
+    $("prompt-buttons").appendChild(logBtn);
     const btn = document.createElement("button");
     btn.textContent = "Play again";
     btn.onclick = () => {
@@ -658,7 +778,9 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (scoresOpen()) {
+    if (journalOpen()) {
+      closeJournal();
+    } else if (scoresOpen()) {
       closeScores();
     } else if (optionsOpen()) {
       closeOptions();
@@ -668,7 +790,7 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (optionsOpen() || scoresOpen()) return;
+  if (optionsOpen() || scoresOpen() || journalOpen()) return;
   if (!started) {
     start(e.key.toLowerCase());
     return;
@@ -712,10 +834,15 @@ document.addEventListener("click", (e) => {
   // reach the game (they must not start it or skip a pause).
   if (e.target.closest("#topbar") || e.target.closest("#options-panel")
       || e.target.closest("#market") || e.target.closest("#ack-panel")
-      || e.target.closest("#scores-panel")) {
+      || e.target.closest("#scores-panel")
+      || e.target.closest("#journal-panel")) {
     return;
   }
-  if (scoresOpen()) {           // clicking the dimmed backdrop closes
+  if (journalOpen()) {          // clicking the dimmed backdrop closes
+    closeJournal();
+    return;
+  }
+  if (scoresOpen()) {
     closeScores();
     return;
   }
@@ -735,6 +862,15 @@ $("ack-ok").addEventListener("click", confirmAck);
 /* Hall of Fame UI */
 $("scores-btn").addEventListener("click", openScores);
 $("scores-close").addEventListener("click", closeScores);
+
+/* Captain's log UI */
+$("journal-close").addEventListener("click", closeJournal);
+$("journal-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(journalText).then(() => {
+    $("journal-copy").textContent = "Copied!";
+    setTimeout(() => { $("journal-copy").textContent = "Copy"; }, 1500);
+  }).catch(() => {});
+});
 
 /* Market log UI */
 $("market-toggle").addEventListener("click", () => {

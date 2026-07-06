@@ -48,6 +48,18 @@
     </div>
   </div>
 
+  <!-- ============ CAPTAIN'S LOG ============ -->
+  <div id="journal-overlay" class="hidden">
+    <div id="journal-panel">
+      <div class="box-title">C A P T A I N ' S&nbsp;&nbsp;L O G</div>
+      <div id="journal-body"></div>
+      <div id="options-footer">
+        <button id="journal-copy">Copy</button>
+        <button id="journal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ ACKNOWLEDGE (Bad Joss) ============ -->
   <div id="ack-overlay" class="hidden">
     <div id="ack-panel">
@@ -138,9 +150,11 @@
         <div class="box-title" id="market-toggle">Market log
           <span id="market-arrow">[+]</span></div>
         <div id="market-body" class="hidden">
+          <div id="pace" class="hidden"></div>
           <table id="market-table" class="goods"></table>
         </div>
       </div>
+      <div id="venture" class="hidden"></div>
     </div>
 
     <!-- ============ SEA BATTLE ============ -->

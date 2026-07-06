@@ -32,6 +32,7 @@ ROOT = Path(__file__).parent
 SAVE_DIR = ROOT / "saves"
 HIGHSCORE_FILE = SAVE_DIR / "highscores.json"
 DAILY_FILE = SAVE_DIR / "dailyscores.json"
+ACHIEVEMENT_FILE = SAVE_DIR / "achievements.json"
 MAX_SESSIONS = 500
 MAX_HIGHSCORES = 10
 
@@ -167,6 +168,17 @@ def _record_highscore(event: dict):
                 del boards[key]
             DAILY_FILE.write_text(json.dumps(boards, indent=1),
                                   encoding="utf-8")
+        # First-unlock registry of achievements.
+        earned = prompt.get("achievements") or []
+        if earned:
+            unlocked = _load_json(ACHIEVEMENT_FILE, {})
+            for a in earned:
+                if a["id"] not in unlocked:
+                    unlocked[a["id"]] = {
+                        "name": a["name"], "desc": a["desc"],
+                        "firm": entry["firm"], "when": entry["when"]}
+            ACHIEVEMENT_FILE.write_text(json.dumps(unlocked, indent=1),
+                                        encoding="utf-8")
 
 
 # ----------------------------------------------------------------------
@@ -226,7 +238,8 @@ def highscores():
     with _score_lock:
         return {"scores": _load_json(HIGHSCORE_FILE, []),
                 "daily_date": day,
-                "daily_scores": _load_json(DAILY_FILE, {}).get(day, [])}
+                "daily_scores": _load_json(DAILY_FILE, {}).get(day, []),
+                "achievements": _load_json(ACHIEVEMENT_FILE, {})}
 
 
 app.mount("/", StaticFiles(directory=ROOT / "static", html=True),

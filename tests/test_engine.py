@@ -471,6 +471,87 @@ def test_retire_requires_confirmation():
     assert ev["prompt"]["kind"] == "end"
 
 
+def drain_gen(gen, answers):
+    """Drive a sub-generator with scripted answers; returns events."""
+    events = [next(gen)]
+    try:
+        for a in answers:
+            events.append(gen.send(a))
+    except StopIteration:
+        pass
+    return events
+
+
+def test_charter_delivery_pays_bonus():
+    g = Game(seed=7, mode="extended")
+    g.port = 3
+    g.hold_[1] = 200
+    g.charter = {"item": 1, "qty": 150, "dest": 3, "due": g.time + 2,
+                 "bonus": 9000}
+    cash = g.cash
+    gen = g._check_charter()
+    ev = next(gen)                          # delivery message pause
+    assert any("charter is fulfilled" in (m.get("text") or "")
+               for m in ev["messages"])
+    assert g.cash == cash + 9000
+    assert g.hold_[1] == 50 and g.charter is None
+    assert g.stats["charters_done"] == 1
+
+
+def test_charter_expires():
+    g = Game(seed=7, mode="extended")
+    g.port = 2
+    g.charter = {"item": 0, "qty": 100, "dest": 5, "due": g.time - 1,
+                 "bonus": 5000}
+    gen = g._check_charter()
+    next(gen)
+    assert g.charter is None
+    assert g.stats["charters_failed"] == 1
+
+
+def test_dockyard_buys_refit():
+    from taipan.engine import REFITS
+    g = Game(seed=7, mode="extended")
+    g.cash = 500_000
+    gen = g._dockyard()
+    ev = next(gen)
+    labels = [o["label"] for o in ev["prompt"]["options"]]
+    assert any("Copper" in x for x in labels)
+    assert labels[-1] == "Leave"
+    gen.send("1")                           # buy the first refit
+    first = sorted(k for k in REFITS if k in g.refits)
+    assert len(g.refits) == 1
+    assert g.cash < 500_000
+    assert g.snapshot()["refits"] == [REFITS[first[0]][0]]
+
+
+def test_achievements_from_stats():
+    g = Game(seed=7, mode="extended")
+    g.stats["ships_sunk"] = 120
+    g.stats["storms"] = 6
+    g.li_donations = 3
+    g.wu_trusted = True
+    g.feng_survived = True
+    g.max_warehouse = 10000
+    g.stats["charters_done"] = 3
+    g.refits.add("figurehead")
+    ids = {a["id"] for a in g._achievements(60000, "Ma Tsu", 80_000_000)}
+    assert {"ma_tsu", "scourge", "fleet_friend", "wus_word",
+            "fengs_bane", "storm_rider", "godown_full",
+            "charter_master", "figurehead"} <= ids
+    # a fresh game earns nothing
+    g2 = Game(seed=8)
+    assert g2._achievements(100, "Galley Hand", 10_000) == []
+
+
+def test_end_event_carries_journal_and_achievements():
+    g = Game(seed=7, mode="classic")
+    g.log_event("Test entry.")
+    ev = next(g._final_stats())
+    assert ev["prompt"]["journal"][0]["text"] == "Test entry."
+    assert "achievements" in ev["prompt"]
+
+
 def test_ack_prompt_carries_message_lines():
     """Loss events yield an 'ack' prompt (modal with OK) that carries
     the message lines so it survives a refresh."""

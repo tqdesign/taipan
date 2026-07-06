@@ -65,6 +65,21 @@ Plays 200 random games to completion and checks engine invariants.
   world), and every month at sea compounds Wu's interest — long
   arbitrage runs now have a real cost. Classic keeps the original's
   one-month voyages.
+- **More extended-mode ventures**: charter contracts (deliver X to Y
+  by a deadline for a fat bonus), McHenry's dockyard refits (copper
+  hull, faster rigging, long nines, a vanity figurehead), a rival firm
+  (Jardine's, Dent & Co., or Russell & Co.) moving your markets,
+  typhoon season (Jul-Sep, uglier storms with a warning before you
+  sail), and bribable harbor masters when your opium is about to be
+  seized.
+- **Achievements**: a dozen honors (Ma Tsu, Feng's Bane, Never Owed a
+  Copper...) announced at game end and recorded first-unlock in the
+  hall of fame.
+- **Captain's log**: a dated journal of your career's notable events,
+  viewable at game end with one-click copy for sharing.
+- **Ghost race**: your best run's net-worth curve overlays the
+  end-of-game chart, and the market log shows live whether you're
+  ahead of or behind your record pace.
 - **Daily challenge** (press D on the splash screen): everyone plays
   the same seed on the same day, classic rules, with its own
   leaderboard.

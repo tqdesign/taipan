@@ -162,6 +162,52 @@ body {
   font-size: 18px;
 }
 
+#venture {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--green-dark);
+  padding: 4px 10px;
+  color: var(--green-dim);
+}
+#venture .charter { color: var(--green); }
+
+#pace {
+  color: var(--green-dim);
+  border-bottom: 1px solid var(--green-dark);
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+}
+
+#journal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 16;
+}
+
+#journal-panel {
+  background: var(--bg);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 24px rgba(59, 255, 112, 0.35);
+  padding: 18px 24px;
+  max-width: 560px;
+  width: calc(100% - 40px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#journal-body {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--green-dark) transparent;
+}
+
+#journal-body .line { margin: 4px 0; }
+#journal-body .when { color: var(--green-dim); margin-right: 8px; }
+
 #scores-overlay {
   position: fixed;
   inset: 0;
@@ -380,6 +426,12 @@ body {
   stroke: var(--green-dark);
   stroke-width: 1;
   stroke-dasharray: 4 3;
+}
+.chart-ghost {
+  fill: none;
+  stroke: var(--green-dim);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
 }
 .chart-title { color: var(--green-dim); font-size: 15px; }
 
