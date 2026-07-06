@@ -381,6 +381,24 @@ def test_transfer_aboard_max_preset_respects_hold():
     assert is_port_menu(ev)
 
 
+def test_ack_prompt_carries_message_lines():
+    """Loss events yield an 'ack' prompt (modal with OK) that carries
+    the message lines so it survives a refresh."""
+    g = Game(seed=3)
+    g.say("Bad Joss!!", cls="warn")
+    g.say("The local authorities have seized your Opium cargo.")
+    ev = next(g._ack())
+    assert ev["prompt"]["kind"] == "ack"
+    assert ev["prompt"]["lines"] == [
+        {"text": "Bad Joss!!", "cls": "warn"},
+        {"text": "The local authorities have seized your Opium cargo.",
+         "cls": "normal"}]
+    # the same lines also went out as normal log messages
+    assert [m["text"] for m in ev["messages"]] == [
+        "Bad Joss!!",
+        "The local authorities have seized your Opium cargo."]
+
+
 def test_bank_presets_skip_zero_and_duplicates():
     assert Game._pct_presets(0) == [{"label": "0%", "value": 0}]
     assert Game._pct_presets(2) == [{"label": "0%", "value": 0},

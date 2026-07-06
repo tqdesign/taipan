@@ -20,7 +20,7 @@ def answer(prompt, rng):
     kind = prompt["kind"]
     if kind == "text":
         return "Smoke & Co."
-    if kind == "pause":
+    if kind in ("pause", "ack"):
         return ""
     if kind == "choice":
         # Mostly valid picks, occasionally garbage to test re-prompting.

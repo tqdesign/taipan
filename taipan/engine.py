@@ -211,6 +211,15 @@ class Game:
     def _pause(self, ms=1800):
         yield self._event({"kind": "pause", "timeout": ms})
 
+    def _ack(self):
+        """Like a pause, but the client must show a modal the player
+        explicitly confirms - used for losses they must not miss (and
+        that fast play must not skip). Carries a copy of the pending
+        message lines so the modal survives a refresh."""
+        lines = [{"text": m["text"], "cls": m.get("cls", "normal")}
+                 for m in self._msgs if m.get("text")]
+        yield self._event({"kind": "ack", "lines": lines})
+
     def _ask_choice(self, text, options, default=None, cancellable=False):
         keys = [o["key"] for o in options]
         while True:
@@ -458,7 +467,7 @@ class Game:
             else:
                 self.say(f"The local authorities have seized your Opium "
                          f"cargo, {self.firm}!")
-            yield from self._pause(2600)
+            yield from self._ack()
 
         # Warehouse theft (BASIC 2000)
         if sum(self.warehouse) > 0 and self.r(50) == 0:
@@ -468,7 +477,7 @@ class Game:
             self.head("Comprador's Report")
             self.say(f"Messenger reports large theft from warehouse, "
                      f"{self.firm}.", cls="warn")
-            yield from self._pause(2600)
+            yield from self._ack()
 
         # Extended: the history of the 1860s unfolds around you.
         if self.extended:
@@ -552,7 +561,7 @@ class Game:
             self.say("Bad Joss!!", cls="warn")
             self.say(f"You've been beaten up and robbed of {fancy(robbed)} "
                      f"in cash, {self.firm}!!")
-            yield from self._pause(2600)
+            yield from self._ack()
 
     def _li_yuen_extortion(self):
         t = self.time
@@ -712,7 +721,7 @@ class Game:
             self.say(f"{num} of your bodyguards have been killed by "
                      f"cutthroats and you have been robbed of all of your "
                      f"cash, {self.firm}!!")
-            yield from self._pause(3000)
+            yield from self._ack()
 
     def _new_ship(self, amount):
         self.head("Comprador's Report")

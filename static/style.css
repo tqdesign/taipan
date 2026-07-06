@@ -158,6 +158,32 @@ body {
   font-size: 18px;
 }
 
+#ack-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+#ack-panel {
+  background: var(--bg);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 24px rgba(255, 120, 60, 0.35);
+  padding: 18px 24px;
+  max-width: 460px;
+  width: calc(100% - 40px);
+}
+
+#ack-lines .line { margin: 6px 0; }
+#ack-lines .head {
+  text-decoration: underline;
+  letter-spacing: 1px;
+}
+#ack-lines .warn { display: inline-block; }
+
 #options-footer { text-align: right; margin-top: 16px; }
 
 #options-footer button {

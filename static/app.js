@@ -467,6 +467,11 @@ function clearPause() {
   }
 }
 
+function confirmAck() {
+  $("ack-overlay").classList.add("hidden");
+  send("");
+}
+
 function keyLabel(opt) {
   // Underline the option's hotkey inside its label where possible.
   const { key, label } = opt;
@@ -534,6 +539,19 @@ function showPrompt(p) {
     $("prompt-pause").classList.remove("hidden");
     pauseTimer = setTimeout(() => send(""),
                             opts.fast ? 40 : (p.timeout || 1800));
+  } else if (p.kind === "ack") {
+    // Bad Joss: a loss the player must explicitly acknowledge.
+    // Never auto-advanced, even in fast play.
+    const box = $("ack-lines");
+    box.innerHTML = "";
+    for (const ln of p.lines || []) {
+      const div = document.createElement("div");
+      div.className = `line ${ln.cls || ""}`;
+      div.textContent = ln.text;
+      box.appendChild(div);
+    }
+    $("ack-overlay").classList.remove("hidden");
+    $("ack-ok").focus();
   } else if (p.kind === "end") {
     /* handled below */
   }
@@ -618,7 +636,12 @@ document.addEventListener("keydown", (e) => {
   }
   if (!prompt || busy) return;
 
-  if (prompt.kind === "pause") {
+  if (prompt.kind === "ack") {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      confirmAck();
+    }
+  } else if (prompt.kind === "pause") {
     e.preventDefault();
     send("");
   } else if (prompt.kind === "choice") {
@@ -641,10 +664,10 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  // Clicks on the topbar, the options dialog, or the market-log toggle
-  // never reach the game (they must not start it or skip a pause).
+  // Clicks on the topbar, dialogs, or the market-log toggle never
+  // reach the game (they must not start it or skip a pause).
   if (e.target.closest("#topbar") || e.target.closest("#options-panel")
-      || e.target.closest("#market")) {
+      || e.target.closest("#market") || e.target.closest("#ack-panel")) {
     return;
   }
   if (optionsOpen()) {          // clicking the dimmed backdrop closes
@@ -657,6 +680,8 @@ document.addEventListener("click", (e) => {
   }
   if (prompt && prompt.kind === "pause" && !busy) send("");
 });
+
+$("ack-ok").addEventListener("click", confirmAck);
 
 /* Market log UI */
 $("market-toggle").addEventListener("click", () => {
