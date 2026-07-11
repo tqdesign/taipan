@@ -20,7 +20,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DAILY_FILE", save_dir / "dailyscores.json")
     monkeypatch.setattr(main, "ACHIEVEMENT_FILE",
                         save_dir / "achievements.json")
-    monkeypatch.setattr(main, "NEW_GAMES_PER_MINUTE", 1000)
+    monkeypatch.setattr(main, "NEW_GAMES_PER_MINUTE", 10**6)
+    monkeypatch.setattr(main, "STEPS_PER_MINUTE", 10**6)
+    monkeypatch.setattr(main, "CHALLENGES_PER_MINUTE", 10**6)
+    monkeypatch.setattr(main, "STATE_READS_PER_MINUTE", 10**6)
     main._sessions.clear()
     main._rate.clear()
     return TestClient(main.app)
@@ -123,6 +126,52 @@ def test_rate_limit(client, monkeypatch):
     codes = [client.post("/api/new", json={}).status_code
              for _ in range(4)]
     assert codes == [200, 200, 200, 429]
+
+
+def test_step_rate_limit_is_per_bucket(client, monkeypatch):
+    d = client.post("/api/new", json={}).json()
+    sid = d["session_id"]
+    monkeypatch.setattr(main, "STEPS_PER_MINUTE", 2)
+    main._rate.clear()
+    codes = [client.post("/api/step",
+                         json={"session_id": sid, "value": ""}
+                         ).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    # ...but other buckets are unaffected
+    assert client.get("/api/highscores").status_code == 200
+    assert client.post("/api/new", json={}).status_code == 200
+
+
+def test_challenge_creation_rate_limited(client, monkeypatch):
+    sid, ev, _ = play_to_end(client, seed=11)
+    monkeypatch.setattr(main, "CHALLENGES_PER_MINUTE", 1)
+    main._rate.clear()
+    assert client.post("/api/challenge",
+                       json={"session_id": sid}).status_code == 200
+    assert client.post("/api/challenge",
+                       json={"session_id": sid}).status_code == 429
+
+
+def test_oversized_input_is_truncated(client):
+    d = client.post("/api/new", json={}).json()
+    sid = d["session_id"]
+    client.post("/api/step",
+                json={"session_id": sid, "value": "x" * 100_000})
+    logged = main._sessions[sid]["inputs"][0]
+    assert len(logged) == main.MAX_INPUT_LENGTH
+
+
+def test_absurd_replay_log_is_refused(client):
+    import json as jsonlib
+    sid = "a" * 32
+    main.SAVE_DIR.mkdir(exist_ok=True)
+    (main.SAVE_DIR / f"{sid}.json").write_text(jsonlib.dumps({
+        "version": main.ENGINE_VERSION, "seed": 1,
+        "inputs": [""] * (main.MAX_REPLAY_INPUTS + 1),
+        "scored": False, "daily": None, "mode": None,
+        "challenge": None, "updated": 0}), encoding="utf-8")
+    assert client.get(f"/api/state/{sid}").status_code == 404
+    assert not (main.SAVE_DIR / f"{sid}.json").exists()
 
 
 def test_daily_seed_is_salted(client, monkeypatch):

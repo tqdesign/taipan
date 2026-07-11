@@ -49,7 +49,21 @@ MAX_HIGHSCORES = 10
 MAX_SAVE_FILES = 2000
 SAVE_TTL_DAYS = 30
 MAX_CHALLENGE_ATTEMPTS = 50
+MAX_CHALLENGE_FILES = 500
+
+# Abuse limits, per IP per minute. Humans in fast play peak around
+# 5-10 steps/second in short bursts; these are far above legitimate
+# play and exist to stop floods, not players.
 NEW_GAMES_PER_MINUTE = 12
+STEPS_PER_MINUTE = 600
+CHALLENGES_PER_MINUTE = 3
+STATE_READS_PER_MINUTE = 120
+
+# The longest legitimate input is a 22-char firm name; anything huge
+# would bloat the replay log.
+MAX_INPUT_LENGTH = 64
+# Restoring a session replays its whole log; refuse absurd ones.
+MAX_REPLAY_INPUTS = 50_000
 
 app = FastAPI(title="Taipan!")
 
@@ -148,16 +162,16 @@ def _check_hex_id(some_id: str):
         raise HTTPException(400, "Bad id")
 
 
-def _rate_limit(request: Request):
+def _rate_limit(request: Request, bucket: str, per_minute: int):
     ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     with _rate_lock:
-        window = _rate.setdefault(ip, deque())
+        window = _rate.setdefault((bucket, ip), deque())
         while window and now - window[0] > 60:
             window.popleft()
-        if len(window) >= NEW_GAMES_PER_MINUTE:
+        if len(window) >= per_minute:
             raise HTTPException(429, "Catch your breath, Taipan. "
-                                     "Too many new voyages.")
+                                     "The harbor master waves you off.")
         window.append(now)
 
 
@@ -222,6 +236,10 @@ def _restore(session_id: str) -> dict | None:
     if data.get("version") != ENGINE_VERSION:
         # The engine's prompt/RNG flow changed since this was saved;
         # replaying would produce a silently wrong game state.
+        path.unlink(missing_ok=True)
+        return None
+    if len(data.get("inputs", [])) > MAX_REPLAY_INPUTS:
+        # No legitimate game gets near this; refuse the replay cost.
         path.unlink(missing_ok=True)
         return None
     daily = data.get("daily")
@@ -352,7 +370,7 @@ def _record_attempt(challenge_id: str, event: dict):
 
 @app.post("/api/new")
 def new_game(req: NewRequest, request: Request):
-    _rate_limit(request)
+    _rate_limit(request, "new", NEW_GAMES_PER_MINUTE)
     day = None
     mode = None
     if req.challenge:
@@ -379,10 +397,13 @@ def new_game(req: NewRequest, request: Request):
 
 
 @app.post("/api/step")
-def step(req: StepRequest):
+def step(req: StepRequest, request: Request):
+    _rate_limit(request, "step", STEPS_PER_MINUTE)
     sess = _get_session(req.session_id)
     with sess["lock"]:
         value = req.value
+        if value and len(value) > MAX_INPUT_LENGTH:
+            value = value[:MAX_INPUT_LENGTH]
         # The only free-text prompt is the firm name; scrub it before
         # it reaches the engine or the replay log.
         if ((sess["last"].get("prompt") or {}).get("kind") == "text"
@@ -405,7 +426,8 @@ def step(req: StepRequest):
 
 
 @app.get("/api/state/{session_id}")
-def state(session_id: str):
+def state(session_id: str, request: Request):
+    _rate_limit(request, "state", STATE_READS_PER_MINUTE)
     sess = _get_session(session_id)
     with sess["lock"]:
         # Re-deliver the last event, minus one-shot messages/fx that the
@@ -415,7 +437,8 @@ def state(session_id: str):
 
 
 @app.post("/api/challenge")
-def create_challenge(req: ChallengeRequest):
+def create_challenge(req: ChallengeRequest, request: Request):
+    _rate_limit(request, "challenge", CHALLENGES_PER_MINUTE)
     sess = _get_session(req.session_id)
     with sess["lock"]:
         last = sess["last"]
@@ -438,6 +461,14 @@ def create_challenge(req: ChallengeRequest):
         }
     with _challenge_lock:
         CHALLENGE_DIR.mkdir(parents=True, exist_ok=True)
+        # Cap the number of challenge files; oldest go first.
+        files = sorted(CHALLENGE_DIR.glob("*.json"),
+                       key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[MAX_CHALLENGE_FILES - 1:]:
+            try:
+                f.unlink()
+            except OSError:
+                pass
         _challenge_path(challenge_id).write_text(json.dumps(data),
                                                  encoding="utf-8")
     return {"challenge_id": challenge_id}
@@ -471,7 +502,11 @@ prune_saves()
 def main():
     uvicorn.run(app,
                 host=os.environ.get("HOST", "127.0.0.1"),
-                port=int(os.environ.get("PORT", "8000")))
+                port=int(os.environ.get("PORT", "8000")),
+                # Backpressure: queue excess connections rather than
+                # letting a flood exhaust the single worker.
+                limit_concurrency=100,
+                timeout_keep_alive=10)
 
 
 if __name__ == "__main__":
