@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import threading
 import time
@@ -104,6 +105,41 @@ class ChallengeRequest(BaseModel):
 
 # ----------------------------------------------------------------------
 # Hygiene
+
+# Firm names appear on public boards, so profanity is masked before the
+# name ever reaches the engine (and therefore before it reaches the
+# input log, keeping replays deterministic). Best effort, not an arms
+# race: leetspeak is normalized, strong words match anywhere, milder
+# words only match standalone to avoid Scunthorpe-style false positives
+# (Grass & Sons, Hancock Trading, Dickens & Co. stay untouched).
+_LEET = str.maketrans("01345789@$!", "oieastbgasi")
+_PROFANE_ANYWHERE = ["fuck", "shit", "cunt", "nigg", "faggot", "bitch",
+                     "whore", "slut", "asshole", "dickhead", "jizz"]
+_PROFANE_STANDALONE = ["ass", "dick", "cock", "tit", "tits", "cum",
+                       "twat", "prick", "fag", "spic", "chink", "kike",
+                       "wank", "penis", "anus", "rape", "rapist",
+                       "pussy", "bastard", "douche", "retard"]
+
+
+def clean_firm(name: str) -> str:
+    if not name:
+        return name
+    norm = name.lower().translate(_LEET)
+    masked = list(name)
+
+    def mask(match):
+        for i in range(match.start(), match.end()):
+            masked[i] = "*"
+
+    for word in _PROFANE_ANYWHERE:
+        for m in re.finditer(re.escape(word), norm):
+            mask(m)
+    for word in _PROFANE_STANDALONE:
+        pattern = rf"(?<![a-z]){re.escape(word)}(?![a-z])"
+        for m in re.finditer(pattern, norm):
+            mask(m)
+    return "".join(masked)
+
 
 def _check_hex_id(some_id: str):
     # Our ids are uuid4 hex; validate before using them in paths.
@@ -346,9 +382,15 @@ def new_game(req: NewRequest, request: Request):
 def step(req: StepRequest):
     sess = _get_session(req.session_id)
     with sess["lock"]:
+        value = req.value
+        # The only free-text prompt is the firm name; scrub it before
+        # it reaches the engine or the replay log.
+        if ((sess["last"].get("prompt") or {}).get("kind") == "text"
+                and value):
+            value = clean_firm(value)
         try:
-            event = sess["gen"].send(req.value)
-            sess["inputs"].append(req.value)
+            event = sess["gen"].send(value)
+            sess["inputs"].append(value)
         except StopIteration:
             event = {**sess["last"], "messages": [], "done": True}
         sess["last"] = event

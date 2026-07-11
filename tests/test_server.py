@@ -146,6 +146,35 @@ def test_daily_salt_persists_when_generated(client, monkeypatch):
     assert first == second
 
 
+@pytest.mark.parametrize("dirty,expected", [
+    ("Fuck & Co.", "**** & Co."),
+    ("Sh1t Trading", "**** Trading"),           # leetspeak
+    ("BULLSHIT LTD", "BULL**** LTD"),           # embedded strong word
+    ("A$$hole Bros", "******* Bros"),
+    ("Dick Dastardly", "**** Dastardly"),        # standalone match
+    ("Grass & Sons", "Grass & Sons"),            # no Scunthorpe problem
+    ("Hancock Trading", "Hancock Trading"),
+    ("Dickens & Co.", "Dickens & Co."),
+    ("Passage to Batavia", "Passage to Batavia"),
+    ("Cumberland House", "Cumberland House"),
+])
+def test_clean_firm(dirty, expected):
+    assert main.clean_firm(dirty) == expected
+
+
+def test_profane_firm_is_masked_in_game(client):
+    d = client.post("/api/new", json={}).json()
+    sid = d["session_id"]
+    ev = client.post("/api/step", json={
+        "session_id": sid, "value": "Shit & Sons"}).json()["event"]
+    assert ev["state"]["firm"] == "**** & Sons"
+    # ...and the replay log holds the masked name, so a restore
+    # reproduces the clean version too.
+    main._sessions.clear()
+    got = client.get(f"/api/state/{sid}").json()["event"]
+    assert got["state"]["firm"] == "**** & Sons"
+
+
 def test_session_survives_memory_eviction(client):
     """A session pushed out of memory is replayed from its save file."""
     d = client.post("/api/new", json={}).json()
