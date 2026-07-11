@@ -13,15 +13,17 @@ primary_region = 'ord'
   destination = '/app/saves'
 
 [http_service]
-  internal_port = 8080
+  # The app listens on 8000 (see Dockerfile ENV PORT).
+  internal_port = 8000
   force_https = true
+  # Scale-to-zero is safe: sessions are event-sourced on the volume
+  # and replay on the next request after a cold start.
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 512
