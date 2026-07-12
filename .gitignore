@@ -11,3 +11,6 @@ wheels/
 
 # Game saves and high scores
 saves/
+
+# Local staging for design assets (canonical copies live in static/)
+artifacts/

@@ -1,0 +1,22 @@
+{
+  "name": "Taipan!",
+  "short_name": "Taipan!",
+  "description": "A web port of Art Canfil's classic 1982 trading game, set in the China trade of the 1860s.",
+  "icons": [
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#050d07",
+  "background_color": "#050d07",
+  "display": "standalone"
+}
