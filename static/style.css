@@ -339,6 +339,27 @@ body {
 }
 #ack-lines .warn { display: inline-block; }
 
+#voyage-actions {
+  margin-top: 18px;
+  border-top: 1px solid var(--green-dark);
+  padding-top: 10px;
+}
+#voyage-buttons { display: flex; gap: 10px; margin-top: 8px; }
+#voyage-buttons button {
+  background: transparent;
+  border: 1px solid var(--green-dim);
+  color: var(--green-dim);
+  font-family: inherit;
+  font-size: 17px;
+  padding: 4px 14px;
+  cursor: pointer;
+}
+#voyage-buttons button:hover {
+  background: var(--green-dim);
+  color: #02180a;
+}
+#voyage-note { color: var(--green-dim); font-size: 15px; margin-top: 6px; }
+
 #options-footer { text-align: right; margin-top: 16px; }
 
 #options-footer button {

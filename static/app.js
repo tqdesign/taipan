@@ -24,6 +24,7 @@ const SESSION_KEY = "taipan_session";
 const MUTE_KEY = "taipan_muted";
 const OPTS_KEY = "taipan_opts";
 const BEST_KEY = "taipan_best";
+const RESTART_KEY = "taipan_restart";
 const ORDER_KEY = "taipan_last_order";
 const ORDER_LABELS = { f: "Fight", r: "Run", t: "Throw cargo" };
 const CANCEL = "\x1b";  // must match engine.CANCEL
@@ -66,7 +67,25 @@ function renderOptions() {
 
 function openOptions() {
   renderOptions();
+  $("voyage-actions").classList.toggle("hidden",
+                                       !(started && sessionId));
   $("options-overlay").classList.remove("hidden");
+}
+
+// Destructive buttons ask for a second click within 2.5s.
+function armDanger(btn, action) {
+  if (btn.dataset.armed === "1") {
+    btn.dataset.armed = "";
+    action();
+    return;
+  }
+  btn.dataset.armed = "1";
+  const label = btn.textContent;
+  btn.textContent = "Sure? Click again";
+  setTimeout(() => {
+    btn.dataset.armed = "";
+    btn.textContent = label;
+  }, 2500);
 }
 
 function closeOptions() {
@@ -288,9 +307,11 @@ function renderPace(st) {
 }
 
 let lastFirm = "Taipan";
+let lastState = null;
 
 function renderState(st) {
   lastFirm = st.firm;
+  lastState = st;
   $("firm").textContent = `${st.firm}, ${st.location}`;
   $("mode-tag").textContent = challengeId ? "CHALLENGE"
     : st.daily ? `DAILY ${st.daily}`
@@ -1039,6 +1060,23 @@ toggleMarket(localStorage.getItem(MARKET_KEY) === "1");
 /* Options UI */
 $("options-btn").addEventListener("click", openOptions);
 $("options-close").addEventListener("click", closeOptions);
+$("restart-btn").addEventListener("click", (e) => {
+  armDanger(e.target, () => {
+    // Same seas type, fresh start: keep daily/challenge context.
+    localStorage.removeItem(SESSION_KEY);
+    const ctx = {};
+    if (lastState && lastState.daily) ctx.daily = true;
+    if (challengeId) ctx.challenge = challengeId;
+    localStorage.setItem(RESTART_KEY, JSON.stringify(ctx));
+    location.reload();   // reload clears every in-flight timer cleanly
+  });
+});
+$("quit-btn").addEventListener("click", (e) => {
+  armDanger(e.target, () => {
+    localStorage.removeItem(SESSION_KEY);
+    location.reload();
+  });
+});
 $("mute").addEventListener("click", toggleMute);
 $("opt-fast").addEventListener("change", (e) => {
   opts.fast = e.target.checked;
@@ -1060,8 +1098,32 @@ $("opt-sound").addEventListener("change", (e) => {
 });
 
 renderMute();
-checkResume();
-checkChallengeLink();
 api("/api/version")
   .then((d) => { $("version").textContent = d.version; })
   .catch(() => {});
+
+// A restart requested from the options dialog skips the splash and
+// starts a fresh game in the same context (daily/challenge/normal).
+const restartCtx = localStorage.getItem(RESTART_KEY);
+if (restartCtx) {
+  localStorage.removeItem(RESTART_KEY);
+  let ctx = {};
+  try {
+    ctx = JSON.parse(restartCtx);
+  } catch (e) { /* fall through to a plain new game */ }
+  started = true;
+  if (ctx.challenge) {
+    fetchChallengeInfo(ctx.challenge)
+      .then((info) => {
+        challengeInfo = info;
+        challengeId = ctx.challenge;
+        newGame(false, ctx.challenge);
+      })
+      .catch(() => newGame());
+  } else {
+    newGame(!!ctx.daily);
+  }
+} else {
+  checkResume();
+  checkChallengeLink();
+}
