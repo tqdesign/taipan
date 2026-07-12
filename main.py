@@ -75,6 +75,22 @@ _rate: dict[str, deque] = {}
 _rate_lock = threading.Lock()
 
 
+def _app_version() -> str:
+    """Build stamp vMMDDYY.HHMM. Baked into version.txt by the Docker
+    build; in local dev, derived from the newest source file mtime."""
+    stamp = ROOT / "version.txt"
+    if stamp.exists():
+        return stamp.read_text(encoding="utf-8").strip()
+    sources = [ROOT / "main.py", ROOT / "taipan" / "engine.py",
+               ROOT / "static" / "app.js", ROOT / "static" / "index.html",
+               ROOT / "static" / "style.css"]
+    newest = max(f.stat().st_mtime for f in sources if f.exists())
+    return time.strftime("v%m%d%y.%H%M", time.gmtime(newest))
+
+
+APP_VERSION = _app_version()
+
+
 def today() -> str:
     return date.today().isoformat()
 
@@ -481,6 +497,11 @@ def challenge_info(challenge_id: str):
     # dry-run the exact world locally before playing "for real".
     return {"mode": data["mode"], "created": data["created"],
             "creator": data["creator"], "attempts": data["attempts"]}
+
+
+@app.get("/api/version")
+def version():
+    return {"version": APP_VERSION}
 
 
 @app.get("/api/highscores")

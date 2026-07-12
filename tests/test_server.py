@@ -224,6 +224,12 @@ def test_profane_firm_is_masked_in_game(client):
     assert got["state"]["firm"] == "**** & Sons"
 
 
+def test_version_endpoint(client):
+    import re
+    v = client.get("/api/version").json()["version"]
+    assert re.fullmatch(r"v\d{6}\.\d{4}", v), v
+
+
 def test_session_survives_memory_eviction(client):
     """A session pushed out of memory is replayed from its save file."""
     d = client.post("/api/new", json={}).json()

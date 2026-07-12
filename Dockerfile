@@ -10,6 +10,9 @@ COPY main.py ./
 COPY taipan ./taipan
 COPY static ./static
 
+# Build stamp, shown in the UI as vMMDDYY.HHMM (UTC).
+RUN date -u +v%m%d%y.%H%M > version.txt
+
 # Persist the saves/ directory on a volume in production.
 VOLUME ["/app/saves"]
 

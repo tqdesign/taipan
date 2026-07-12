@@ -140,6 +140,16 @@ body {
 #topbar span { cursor: pointer; }
 #topbar span:hover { color: var(--green); }
 
+#version {
+  position: absolute;
+  top: 28px;
+  right: 14px;
+  font-size: 13px;
+  color: var(--green-dark);
+  user-select: none;
+  z-index: 5;
+}
+
 #options-overlay {
   position: fixed;
   inset: 0;

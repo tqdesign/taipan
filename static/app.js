@@ -1055,3 +1055,6 @@ $("opt-sound").addEventListener("change", (e) => {
 renderMute();
 checkResume();
 checkChallengeLink();
+api("/api/version")
+  .then((d) => { $("version").textContent = d.version; })
+  .catch(() => {});
