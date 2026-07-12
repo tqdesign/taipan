@@ -67,6 +67,24 @@ MAX_REPLAY_INPUTS = 50_000
 
 app = FastAPI(title="Taipan!")
 
+
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    """Explicit cache policy so CDNs (Cloudflare) don't guess: code and
+    API stay fresh across deploys; heavy immutable assets cache a day.
+    StaticFiles serves ETags, so no-cache revalidations are cheap 304s.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif (path in ("/", "/index.html") or path.endswith(".js")
+            or path.endswith(".css")):
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.endswith((".ttf", ".png", ".ico", ".svg", ".webmanifest")):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
 _sessions: dict[str, dict] = {}
 _registry_lock = threading.Lock()   # guards _sessions dict itself
 _score_lock = threading.Lock()      # guards the high-score files

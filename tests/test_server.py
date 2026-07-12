@@ -224,6 +224,17 @@ def test_profane_firm_is_masked_in_game(client):
     assert got["state"]["firm"] == "**** & Sons"
 
 
+def test_cache_headers(client):
+    """Explicit cache policy: code revalidates, API never caches,
+    heavy assets cache long - so CDN edges can't serve stale JS
+    after a deploy."""
+    assert client.get("/api/version").headers["cache-control"] == "no-store"
+    assert client.get("/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert "max-age=86400" in client.get(
+        "/fonts/VT323-Regular.ttf").headers["cache-control"]
+
+
 def test_version_endpoint(client):
     import re
     v = client.get("/api/version").json()["version"]
