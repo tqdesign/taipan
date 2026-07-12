@@ -1005,6 +1005,13 @@ $("ack-ok").addEventListener("click", confirmAck);
 $("scores-btn").addEventListener("click", openScores);
 $("scores-close").addEventListener("click", closeScores);
 
+/* Text/number entry submit button */
+$("prompt-enter").addEventListener("click", () => {
+  if (prompt && (prompt.kind === "number" || prompt.kind === "text")) {
+    send($("prompt-input").value);
+  }
+});
+
 /* How to play UI */
 $("help-btn").addEventListener("click", () => {
   $("help-overlay").classList.remove("hidden");

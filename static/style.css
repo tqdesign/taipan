@@ -576,6 +576,24 @@ body {
 }
 #prompt-input:focus { outline: none; border-bottom-color: var(--green); }
 
+#prompt-enter {
+  margin-left: 12px;
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-family: inherit;
+  font-size: 18px;
+  padding: 3px 16px;
+  cursor: pointer;
+  text-shadow: inherit;
+}
+#prompt-enter:hover, #prompt-enter:focus {
+  background: var(--green);
+  color: #02180a;
+  text-shadow: none;
+  outline: none;
+}
+
 #prompt-pause { margin-top: 6px; font-size: 18px; }
 
 @media (max-width: 640px) {
