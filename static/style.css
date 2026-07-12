@@ -70,6 +70,24 @@ body {
 #splash .subtitle { margin-top: 8px; }
 #splash .credits { margin: 22px 0 10px; color: var(--green-dim); }
 #splash .blink { font-size: 22px; margin-top: 12px; }
+
+#splash-help {
+  margin-top: 14px;
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-family: inherit;
+  font-size: 19px;
+  padding: 6px 22px;
+  cursor: pointer;
+  text-shadow: inherit;
+}
+#splash-help:hover, #splash-help:focus {
+  background: var(--green);
+  color: #02180a;
+  text-shadow: none;
+  outline: none;
+}
 #resume-hint {
   margin-top: 14px;
   display: inline-block;

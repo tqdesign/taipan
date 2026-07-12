@@ -924,6 +924,10 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (!started) {
+    if (e.key.toLowerCase() === "h") {   // How to Play, without starting
+      $("help-overlay").classList.remove("hidden");
+      return;
+    }
     start(e.key.toLowerCase());
     return;
   }
@@ -968,7 +972,8 @@ document.addEventListener("click", (e) => {
       || e.target.closest("#market") || e.target.closest("#ack-panel")
       || e.target.closest("#scores-panel")
       || e.target.closest("#journal-panel")
-      || e.target.closest("#help-panel")) {
+      || e.target.closest("#help-panel")
+      || e.target.closest("#splash-help")) {
     return;
   }
   if (helpOpen()) {             // clicking the dimmed backdrop closes
@@ -1002,6 +1007,9 @@ $("scores-close").addEventListener("click", closeScores);
 
 /* How to play UI */
 $("help-btn").addEventListener("click", () => {
+  $("help-overlay").classList.remove("hidden");
+});
+$("splash-help").addEventListener("click", () => {
   $("help-overlay").classList.remove("hidden");
 });
 $("help-close").addEventListener("click", closeHelp);
