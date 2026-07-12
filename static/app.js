@@ -482,6 +482,14 @@ function closeScores() {
   $("scores-overlay").classList.add("hidden");
 }
 
+function helpOpen() {
+  return !$("help-overlay").classList.contains("hidden");
+}
+
+function closeHelp() {
+  $("help-overlay").classList.add("hidden");
+}
+
 function scoreLine(s, i) {
   const tag = s.mode === "extended" ? " [ext]" : "";
   return `${String(i + 1).padStart(2)}. ${s.firm} - `
@@ -898,7 +906,9 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (journalOpen()) {
+    if (helpOpen()) {
+      closeHelp();
+    } else if (journalOpen()) {
       closeJournal();
     } else if (scoresOpen()) {
       closeScores();
@@ -910,7 +920,9 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (optionsOpen() || scoresOpen() || journalOpen()) return;
+  if (optionsOpen() || scoresOpen() || journalOpen() || helpOpen()) {
+    return;
+  }
   if (!started) {
     start(e.key.toLowerCase());
     return;
@@ -955,10 +967,15 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("#topbar") || e.target.closest("#options-panel")
       || e.target.closest("#market") || e.target.closest("#ack-panel")
       || e.target.closest("#scores-panel")
-      || e.target.closest("#journal-panel")) {
+      || e.target.closest("#journal-panel")
+      || e.target.closest("#help-panel")) {
     return;
   }
-  if (journalOpen()) {          // clicking the dimmed backdrop closes
+  if (helpOpen()) {             // clicking the dimmed backdrop closes
+    closeHelp();
+    return;
+  }
+  if (journalOpen()) {
     closeJournal();
     return;
   }
@@ -982,6 +999,12 @@ $("ack-ok").addEventListener("click", confirmAck);
 /* Hall of Fame UI */
 $("scores-btn").addEventListener("click", openScores);
 $("scores-close").addEventListener("click", closeScores);
+
+/* How to play UI */
+$("help-btn").addEventListener("click", () => {
+  $("help-overlay").classList.remove("hidden");
+});
+$("help-close").addEventListener("click", closeHelp);
 
 /* Captain's log UI */
 $("journal-close").addEventListener("click", closeJournal);

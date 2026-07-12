@@ -11,9 +11,83 @@
 
   <div id="topbar">
     <span id="mode-tag"></span>
+    <span id="help-btn" title="How to play">[how to play]</span>
     <span id="scores-btn" title="Hall of Fame">[scores]</span>
     <span id="mute" title="Toggle sound (M)"></span>
     <span id="options-btn" title="Options">[options]</span>
+  </div>
+
+  <!-- ============ HOW TO PLAY ============ -->
+  <div id="help-overlay" class="hidden">
+    <div id="help-panel">
+      <div class="box-title">H O W&nbsp;&nbsp;T O&nbsp;&nbsp;P L A Y</div>
+      <div id="help-body">
+        <p>It is 1860. You are a trader on the South China Sea with a
+        small ship, big debts, and one goal: <strong>build a fortune
+        and retire</strong>. Your score is your net worth measured
+        against how fast you earned it &mdash; a quick fortune beats a
+        slow one.</p>
+
+        <h3>The trading loop</h3>
+        <p>Sail between seven ports &mdash; Hong Kong, Shanghai,
+        Nagasaki, Saigon, Manila, Singapore, Batavia &mdash; buying
+        goods where they're cheap and selling where they're dear.
+        Prices roll fresh at every port call; the <em>Market log</em>
+        panel remembers what you last saw everywhere.</p>
+        <p>The goods: <strong>Opium</strong> is the money-maker, but
+        authorities outside Hong Kong may seize it.
+        <strong>Silk</strong> and <strong>Arms</strong> are steady
+        earners. <strong>General Cargo</strong> is cheap ballast for
+        starting out.</p>
+
+        <h3>Hong Kong is home</h3>
+        <p>Only Hong Kong has: the <strong>bank</strong> (cash in hand
+        above ~25,000 attracts muggers; banked money is safe and earns
+        0.5%/month), the <strong>warehouse</strong> (store up to
+        10,000 units to wait out bad prices), <strong>Elder Brother
+        Wu</strong> the moneylender, and <strong>McHenry</strong>, who
+        repairs battle damage.</p>
+        <p><strong>Beware Wu's interest: 10% per month,
+        compounding.</strong> Borrowed money must work fast. Debt
+        above 10,000 brings warnings; above 20,000, cutthroats.</p>
+
+        <h3>Li Yuen and the pirates</h3>
+        <p>The pirate lord <strong>Li Yuen</strong> asks donations to
+        the temple of Tin Hau. Pay, and his fleets let you pass (for a
+        while). Refuse, and the sea gets dangerous. Ordinary pirates
+        attack regardless &mdash; in battle you can
+        <strong>Fight</strong> (needs guns), <strong>Run</strong>, or
+        <strong>Throw cargo</strong> overboard to lighten ship and
+        escape. A damaged ship sinks in storms; watch your
+        seaworthiness.</p>
+
+        <h3>Controls</h3>
+        <p>Every choice has an underlined hotkey. Amount prompts
+        accept <strong>A</strong> for All, plus the preset buttons.
+        <strong>Esc</strong> cancels any input or backs out of a
+        purchase. <strong>M</strong> toggles sound. In
+        <em>[options]</em>: fast play (no delays) and auto-repeating
+        battle orders.</p>
+
+        <h3>Modes</h3>
+        <p><strong>Classic</strong> is the exact 1982 game.
+        <strong>Extended</strong> adds tavern rumors, charter
+        contracts, dockyard refits, a rival firm, typhoon seasons,
+        port-by-port opium risk, and the history of the 1860s.
+        The <strong>daily challenge</strong> (press D on the title
+        screen) gives every captain the same seas and its own
+        leaderboard. After any game, <em>Challenge a friend</em>
+        shares your exact voyage as a link to beat.</p>
+
+        <h3>Three tips for a first voyage</h3>
+        <p>1) Repay Wu before his interest eats you &mdash; short
+        loans only. 2) Bank your cash in Hong Kong before it makes you
+        a target. 3) When Li Yuen asks for a donation early, pay it
+        &mdash; protection is cheap while you're poor.</p>
+        <p>Good joss, Taipan!</p>
+      </div>
+      <div id="options-footer"><button id="help-close">Close</button></div>
+    </div>
   </div>
 
   <!-- ============ HALL OF FAME ============ -->
