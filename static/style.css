@@ -253,6 +253,46 @@ body {
 #help-body strong { color: var(--green); }
 #help-body em { font-style: normal; color: var(--green-dim); }
 
+#about-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+}
+
+#about-panel {
+  background: var(--bg);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 24px rgba(59, 255, 112, 0.35);
+  padding: 18px 24px;
+  max-width: 620px;
+  width: calc(100% - 40px);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#about-body {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--green-dark) transparent;
+}
+
+#about-body p { margin: 8px 0; }
+#about-body h3 {
+  margin: 16px 0 4px;
+  font-size: 20px;
+  font-weight: normal;
+  text-decoration: underline;
+  letter-spacing: 1px;
+}
+#about-body strong { color: var(--green); }
+#about-body em { font-style: normal; color: var(--green-dim); }
+#about-body a { color: var(--green); }
+
 #journal-overlay {
   position: fixed;
   inset: 0;

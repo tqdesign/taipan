@@ -511,6 +511,14 @@ function closeHelp() {
   $("help-overlay").classList.add("hidden");
 }
 
+function aboutOpen() {
+  return !$("about-overlay").classList.contains("hidden");
+}
+
+function closeAbout() {
+  $("about-overlay").classList.add("hidden");
+}
+
 function scoreLine(s, i) {
   const tag = s.mode === "extended" ? " [ext]" : "";
   return `${String(i + 1).padStart(2)}. ${s.firm} - `
@@ -927,7 +935,9 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (helpOpen()) {
+    if (aboutOpen()) {
+      closeAbout();
+    } else if (helpOpen()) {
       closeHelp();
     } else if (journalOpen()) {
       closeJournal();
@@ -941,7 +951,8 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (optionsOpen() || scoresOpen() || journalOpen() || helpOpen()) {
+  if (optionsOpen() || scoresOpen() || journalOpen() || helpOpen()
+      || aboutOpen()) {
     return;
   }
   if (!started) {
@@ -994,10 +1005,15 @@ document.addEventListener("click", (e) => {
       || e.target.closest("#scores-panel")
       || e.target.closest("#journal-panel")
       || e.target.closest("#help-panel")
+      || e.target.closest("#about-panel")
       || e.target.closest("#splash-help")) {
     return;
   }
-  if (helpOpen()) {             // clicking the dimmed backdrop closes
+  if (aboutOpen()) {            // clicking the dimmed backdrop closes
+    closeAbout();
+    return;
+  }
+  if (helpOpen()) {
     closeHelp();
     return;
   }
@@ -1041,6 +1057,12 @@ $("splash-help").addEventListener("click", () => {
   $("help-overlay").classList.remove("hidden");
 });
 $("help-close").addEventListener("click", closeHelp);
+
+/* About UI */
+$("about-btn").addEventListener("click", () => {
+  $("about-overlay").classList.remove("hidden");
+});
+$("about-close").addEventListener("click", closeAbout);
 
 /* Captain's log UI */
 $("journal-close").addEventListener("click", closeJournal);

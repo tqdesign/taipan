@@ -19,8 +19,75 @@
     <span id="mode-tag"></span>
     <span id="help-btn" title="How to play">[how to play]</span>
     <span id="scores-btn" title="Hall of Fame">[scores]</span>
+    <span id="about-btn" title="About this port">[about]</span>
     <span id="mute" title="Toggle sound (M)"></span>
     <span id="options-btn" title="Options">[options]</span>
+  </div>
+
+  <!-- ============ ABOUT ============ -->
+  <div id="about-overlay" class="hidden">
+    <div id="about-panel">
+      <div class="box-title">A B O U T&nbsp;&nbsp;T H I S&nbsp;&nbsp;P O R T</div>
+      <div id="about-body">
+        <p><strong>Taipan!</strong> was created by Art Canfil &mdash;
+        first on the TRS-80 in 1979, then the Apple ][ in 1982. It was
+        an old favorite of mine, and this is my attempt to bring it
+        back &mdash; with a twist in how it was made.</p>
+
+        <h3>The experiment</h3>
+        <p>This entire port was built in conversation with an AI
+        (Claude, by Anthropic). I described what I wanted; the AI
+        found the original Applesoft BASIC listing online, ported the
+        game engine line-by-line to Python, built this green-phosphor
+        terminal you're looking at, wrote the test suite, and deployed
+        it to the web. My job was to play it, point at things, and
+        decide what the game should become. The AI's job was
+        everything else.</p>
+
+        <h3>Preserving the original</h3>
+        <p><strong>Classic mode is the exact 1982 game.</strong> The
+        price formulas, Li Yuen's extortion math, Elder Brother Wu's
+        brutal 10%-a-month interest, the combat odds, the scoring
+        &mdash; all checked against the original BASIC source, which
+        ships alongside the code. Even the strange parts survive: you
+        can still overload your ship buying more cargo than it holds,
+        because that's how it worked on the Apple ][.</p>
+
+        <h3>Making it better (carefully)</h3>
+        <p>Everything I thought improved the game lives in
+        <strong>Extended mode</strong>, where the original rules are
+        the foundation, not the casualty: tavern rumors, charter
+        contracts, dockyard refits, a rival firm working against you,
+        typhoon seasons, port-by-port opium risk, reputations with Li
+        Yuen and Wu that remember how you've treated them, and the
+        real history of the 1860s unfolding around your voyages.
+        Around both modes: a daily challenge where every captain sails
+        the same seas, challenge links to race a friend's ghost,
+        achievements, and a captain's log that remembers your
+        story.</p>
+
+        <h3>The journey</h3>
+        <p>It started with an empty folder and one question &mdash;
+        <em>"are you familiar with the game Taipan?"</em> From there:
+        the original source tracked down and studied, a playable game
+        the same day, then weeks of back-and-forth &mdash; hundreds of
+        automated voyages replayed to prove the engine faithful,
+        arguments over what was a bug versus what was 1982, features
+        proposed, a few rejected, the good ones kept. Every score on
+        the boards here is replayable from its seed &mdash; the same
+        trick that made saves work also keeps the game honest. It
+        ends, for now, with the lorcha in your browser tab.</p>
+
+        <h3>Credits</h3>
+        <p>Original game: <strong>Art Canfil</strong>. Reference C
+        port: Jay Link. Terminal font: VT323. Built with Claude
+        (Anthropic). Source code:
+        <a href="https://github.com/tqdesign/taipan" target="_blank"
+           rel="noopener">github.com/tqdesign/taipan</a></p>
+        <p>Good joss, Taipan!</p>
+      </div>
+      <div id="options-footer"><button id="about-close">Close</button></div>
+    </div>
   </div>
   <div id="version" title="Build version"></div>
 
