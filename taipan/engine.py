@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 5
+ENGINE_VERSION = 6
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -107,6 +107,15 @@ REFITS = {
 RIVALS = ["Jardine's", "Dent & Co.", "Russell & Co."]
 
 TYPHOON_MONTHS = (7, 8, 9)   # Jul-Sep: storm odds worsen (extended)
+
+# Late-game headwinds (extended only; classic is untouched). Without
+# these, banked wealth compounds risk-free forever and the optimal
+# strategy is an infinite grind - see the 94-year, 231-billion run
+# that prompted them.
+BANK_INSURED = 500_000            # bank failures never touch this much
+BANK_LOSS_MIN, BANK_LOSS_MAX = 0.25, 0.40   # of the balance above it
+FORCED_RETIREMENT_MONTHS = 300    # partners force retirement: 25 years
+MAX_DRIFT = 3                     # base prices cap at 3x the 1860 values
 
 # Scripted history of the 1860s China coast. Fired on the first arrival
 # on or after the date. Each entry: message, then a list of temporary
@@ -202,7 +211,7 @@ class Game:
                       "robbed": 0, "storms": 0, "seizures": 0,
                       "rumors_heard": 0, "rumors_true": 0,
                       "bribes": 0, "charters_done": 0,
-                      "charters_failed": 0}
+                      "charters_failed": 0, "bank_lost": 0}
         # Extended-mode state.
         self.wu_rate = 0.10       # Wu's monthly interest
         self.wu_payoffs = 0       # times the debt was cleared in full
@@ -216,6 +225,7 @@ class Game:
         self.charter = None       # active delivery contract
         self.refits = set()       # dockyard upgrades owned
         self.rival = None         # rival firm's name (extended)
+        self.bank_warning = None  # time a rumored bank panic breaks
         # Achievement tracking (all modes).
         self.ever_debt = False
         self.feng_survived = False
@@ -479,6 +489,9 @@ class Game:
     def _arrival_events(self):
         self.net_history.append(
             [self.time, int(self.cash + self.bank - self.debt)])
+        if self.extended:
+            yield from self._forced_retirement_check()
+            yield from self._bank_crisis()
         if self.port == 1:
             if self.li == 0 and self.cash > 0:
                 yield from self._li_yuen_extortion()
@@ -685,6 +698,59 @@ class Game:
             self.say(f"You've been beaten up and robbed of {fancy(robbed)} "
                      f"in cash, {self.firm}!!")
             yield from self._ack()
+
+    def _forced_retirement_check(self):
+        """Extended: careers end. After 25 years the partners insist,
+        and the score is counted - idling forever is not a strategy."""
+        if self.extended and self.time > FORCED_RETIREMENT_MONTHS:
+            self.head("Comprador's Report")
+            self.say(f"Twenty-five years at the helm, {self.firm}.",
+                     cls="big")
+            self.say("The partners insist the firm pass to younger "
+                     "hands. Your trading days are done - time to "
+                     "count your fortune.")
+            self.log_event("Retired after twenty-five years at the "
+                           "helm, as the partners insisted.")
+            yield from self._pause(3200)
+            raise _GameOver
+
+    def _bank_crisis(self):
+        """Extended: banks can fail. A warning circulates a season
+        ahead; when the panic breaks, deposits above the insured floor
+        take a 25-40% loss. No riskless place to park a fortune."""
+        if self.bank_warning is not None:
+            if self.time >= self.bank_warning:
+                self.bank_warning = None
+                loss = 0
+                if self.bank > BANK_INSURED:
+                    loss = int((self.bank - BANK_INSURED)
+                               * (BANK_LOSS_MIN + self.rand01()
+                                  * (BANK_LOSS_MAX - BANK_LOSS_MIN)))
+                if loss > 0:
+                    self.bank -= loss
+                    self.stats["bank_lost"] += loss
+                    self.log_event(f"Bank panic! The bank failed and "
+                                   f"{fancy(loss)} of our deposits "
+                                   f"vanished with it.")
+                    self.head("Comprador's Report")
+                    self.say("BANK PANIC, TAIPAN!!", cls="warn")
+                    self.say(f"The bank has failed! Deposits above the "
+                             f"insured {fancy(BANK_INSURED)} take heavy "
+                             f"losses - {fancy(loss)} of your fortune "
+                             f"is gone!!")
+                    yield from self._ack()
+                else:
+                    self.head("Comprador's Report")
+                    self.say("The bank panic has passed, Taipan. "
+                             "Modest deposits were spared.")
+                    yield from self._pause()
+        elif self.r(50) == 0:
+            self.bank_warning = self.time + 2 + self.r(3)
+            self.head("Comprador's Report")
+            self.say('Whispers in the counting houses, Taipan: "The '
+                     'banks are overextended. There will be trouble '
+                     'within a season," they say.', cls="warn")
+            yield from self._pause(2600)
 
     def _check_charter(self):
         """Extended: settle the active charter, then maybe offer one."""
@@ -1331,10 +1397,7 @@ class Game:
                 self.year += 1
                 self.ec += 10
                 self.ed += 0.5
-                # Base prices drift upward over the years (BASIC 1020)
-                for i in range(4):
-                    for p in range(1, 8):
-                        self.base[i][p] += self.r(2)
+                self._drift_prices()
             # Wu charges 10%/month (8% for a trusted borrower); every
             # month at sea compounds it.
             interest = int(self.debt * self.wu_rate)
@@ -1356,6 +1419,20 @@ class Game:
             self.say(f"Arriving at {LOCATIONS[self.port]}...")
         yield from self._pause(1400)
         return True
+
+    def _drift_prices(self):
+        """Base prices drift upward each year (BASIC 1020). Extended
+        caps the drift at MAX_DRIFT x the 1860 values so multi-decade
+        careers can't harvest absurd arbitrage spreads; classic keeps
+        the unbounded original. The cap is applied after the draw, so
+        the classic RNG stream is identical in both modes."""
+        for i in range(4):
+            for p in range(1, 8):
+                self.base[i][p] += self.r(2)
+                if self.extended:
+                    cap = BASE_PRICE[i][p] * MAX_DRIFT
+                    if self.base[i][p] > cap:
+                        self.base[i][p] = cap
 
     def _fleet_size(self, battle_id):
         """How many pirates show up (BASIC 3120/3230): scales with your
@@ -1617,6 +1694,10 @@ class Game:
         if "figurehead" in self.refits:
             add("figurehead", "A Fine Figurehead",
                 "Vanity befitting a Taipan")
+        if s["bank_lost"] > 0 and score >= 1000:
+            add("panic_survivor", "Weathered the Panic",
+                "Lose a fortune to a bank failure and rate Taipan "
+                "anyway")
         return earned
 
     # ------------------------------------------------------------------
@@ -1669,6 +1750,8 @@ class Game:
             self.say(f"Charters fulfilled: {s['charters_done']} "
                      f"(lapsed: {s['charters_failed']})   Harbor "
                      f"masters bribed: {s['bribes']}")
+        if s["bank_lost"]:
+            self.say(f"Lost to bank failures: {fancy(s['bank_lost'])}")
         achievements = self._achievements(score, rating, net)
         if achievements:
             self.head("Honors earned:")

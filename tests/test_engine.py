@@ -431,6 +431,60 @@ def test_classic_voyage_is_always_one_month():
     raise AssertionError("no clean voyage found in 50 seeds")
 
 
+def test_bank_crisis_loss_bounds():
+    from taipan.engine import BANK_INSURED
+    g = Game(seed=9, mode="extended")
+    g.bank = 10_500_000
+    g.bank_warning = g.time                    # panic due now
+    ev = next(g._bank_crisis())
+    assert ev["prompt"]["kind"] == "ack"       # a loss demands an OK
+    loss = 10_500_000 - g.bank
+    above_floor = 10_500_000 - BANK_INSURED
+    assert 0.25 * above_floor <= loss <= 0.40 * above_floor
+    assert g.stats["bank_lost"] == loss
+    assert g.bank_warning is None
+
+
+def test_bank_crisis_spares_the_insured_floor():
+    g = Game(seed=9, mode="extended")
+    g.bank = 400_000                           # below the floor
+    g.bank_warning = g.time
+    ev = next(g._bank_crisis())
+    assert ev["prompt"]["kind"] == "pause"     # just news, no loss
+    assert g.bank == 400_000
+    assert g.stats["bank_lost"] == 0
+
+
+def test_forced_retirement_after_25_years():
+    from taipan.engine import _GameOver
+    g = Game(seed=3, mode="extended")
+    g.year, g.month = 1885, 1                  # month 301: time is up
+    gen = g._forced_retirement_check()
+    next(gen)                                  # the farewell message
+    with pytest.raises(_GameOver):
+        gen.send("")
+    # classic careers never end by decree
+    gc = Game(seed=3, mode="classic")
+    gc.year, gc.month = 1954, 6
+    assert list(gc._forced_retirement_check()) == []
+
+
+def test_drift_cap_extended_only():
+    from taipan.engine import MAX_DRIFT
+    g = Game(seed=1, mode="extended")
+    for _ in range(200):
+        g._drift_prices()
+    assert all(g.base[i][p] <= BASE_PRICE[i][p] * MAX_DRIFT
+               for i in range(4) for p in range(1, 8))
+    gc = Game(seed=1, mode="classic")
+    for _ in range(200):
+        gc._drift_prices()
+    assert any(gc.base[i][p] > BASE_PRICE[i][p] * MAX_DRIFT
+               for i in range(4) for p in range(1, 8))
+    # same RNG draws in both modes: the cap must not shift the stream
+    assert g.r(1000) == gc.r(1000)
+
+
 def test_extended_caps_fleet_size_classic_does_not():
     from taipan.engine import (GENERIC, LI_YUEN, MAX_GENERIC_FLEET,
                                MAX_LI_YUEN_FLEET)

@@ -53,6 +53,14 @@ WebAudio sound (no assets), and the lorcha battle art of the original.
   - **The dockyard**: one-time refits from McHenry — copper hull
     (better escapes), new rigging (shorter long voyages), long nines
     (heavier broadsides), and a gilded figurehead (vanity).
+  - **Late-game headwinds** (added after a 94-year, 231-billion run
+    proved the endgame was a riskless grind): **banks can fail** — a
+    warning circulates a season ahead, then deposits above an insured
+    500,000 take a 25–40% loss, so there is no riskless place to park
+    a fortune; **careers end** — the partners force retirement after
+    25 years (Jan 1885), so the benchmark is your best quarter-century,
+    not your patience; and **price drift is capped** at 3× the 1860
+    base values, keeping multi-decade arbitrage spreads sane.
 
 ## Around both modes
 
