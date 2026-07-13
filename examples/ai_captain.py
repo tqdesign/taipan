@@ -3,46 +3,50 @@
 This script demonstrates the core loop of every AI agent:
 
     OBSERVE  ->  the game's JSON state + the prompt describing legal moves
-    REASON   ->  a rules engine (level 1) or Claude (level 2) picks a move
+    REASON   ->  a rules engine (level 1) or an LLM (level 2) picks a move
     ACT      ->  POST the move back to /api/step
     ... repeat until the game ends.
 
-The game server is the perfect classroom for this because every
-response already contains what an agent needs: a full state snapshot,
-the messages since the last move, and a `prompt` object that
-*enumerates the legal actions* (choices with keys, numbers with hints).
-No screen scraping, no guessing.
-
 Levels:
   --captain rules    Level 1: no AI. Hard-coded heuristics. Free, fast.
-  --captain claude   Level 2: Claude decides at real decision points.
+  --captain claude   Level 2: Anthropic's Claude decides (ANTHROPIC_API_KEY)
+  --captain grok     Level 2: xAI's Grok decides       (XAI_API_KEY)
+  --captain gemini   Level 2: Google's Gemini decides  (GEMINI_API_KEY)
+  --compare          Play every provider you have a key for, same seed,
+                     and print a comparison table.
 
-The single most important pattern here is DECISION-POINT FILTERING:
-most steps in a game are pauses, acknowledgements, and bookkeeping.
-The agent answers those with two lines of code and only spends an
-(expensive, slow) model call on steps where a decision actually
-matters. Watch the `answer()` method.
+All LLM captains share the same brain (observation building, output
+validation, decision-point filtering) and differ ONLY in the API call —
+a clean illustration that the agent loop is provider-agnostic even
+though each provider speaks its own dialect.
+
+Fair comparisons: pass --daily so every captain sails the SAME seed
+(the game's daily-challenge mechanism). Their scores land on the daily
+leaderboard together — the game's own scoreboard becomes your model
+benchmark.
 
 Usage:
     # terminal 1: run the game server
     uv run main.py
 
-    # terminal 2: watch a rules bot play (no AI, no key needed)
+    # terminal 2:
     uv run python examples/ai_captain.py --captain rules --verbose
-
-    # let Claude play (uses ANTHROPIC_API_KEY or `ant auth login`)
     uv run --with anthropic python examples/ai_captain.py \
-        --captain claude --verbose
+        --captain claude --daily --verbose
+    uv run --with anthropic python examples/ai_captain.py --compare
 
 Cost note: a full game is hundreds of steps but only ~100-200 real
-decisions. With the default model that's real money (dollars, not
-cents) per game — that's part of the lesson. Use --model
-claude-haiku-4-5 for classroom budgets, or --max-steps to cap a demo.
+decisions after filtering. That is real money on frontier models —
+part of the lesson. Cap demos with --max-steps; pick budget models
+with --claude-model / --grok-model / --gemini-model.
 """
 
 import argparse
 import json
+import os
 import sys
+import time
+import urllib.error
 import urllib.request
 
 # ----------------------------------------------------------------------
@@ -54,15 +58,26 @@ class GameClient:
         self.session_id = None
 
     def _post(self, path, body):
-        req = urllib.request.Request(
-            self.base_url + path,
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.load(resp)
+        # A bot plays fast enough to trip the server's own rate limits
+        # (600 steps/min per IP) — a real-world lesson: agents must
+        # respect 429s with backoff, not crash on them.
+        payload = json.dumps(body).encode()
+        for _ in range(60):
+            req = urllib.request.Request(
+                self.base_url + path, data=payload,
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.load(resp)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429:
+                    time.sleep(5)
+                    continue
+                raise
+        raise RuntimeError("server kept rate-limiting for 5 minutes")
 
-    def new_game(self):
-        data = self._post("/api/new", {})
+    def new_game(self, daily=False):
+        data = self._post("/api/new", {"daily": daily})
         self.session_id = data["session_id"]
         return data["event"]
 
@@ -74,7 +89,7 @@ class GameClient:
 
 # ----------------------------------------------------------------------
 # Level 1: a rules-based captain. No AI anywhere — this is the baseline
-# that teaches the loop itself, and the fallback when the AI misfires.
+# that teaches the loop itself, and the fallback when an AI misfires.
 
 # Rough midpoint value of each commodity, used to judge if a price is
 # high or low relative to "normal" (opium, silk, arms, general).
@@ -82,6 +97,7 @@ TYPICAL_PRICE = [11000, 1600, 90, 26]
 
 class RulesCaptain:
     name = "rules"
+    firm = "Rule Britannia Ltd."
 
     def __init__(self):
         self.sell_phase = True   # at each port: sell first, then buy once
@@ -96,7 +112,7 @@ class RulesCaptain:
         if kind in ("pause", "ack"):
             return ""
         if kind == "text":
-            return "Rule Britannia Ltd."
+            return self.firm
 
         keys = [o["key"] for o in prompt.get("options", [])]
 
@@ -186,9 +202,9 @@ class RulesCaptain:
 
 
 # ----------------------------------------------------------------------
-# Level 2: Claude decides. Same loop, but real decisions go to a model.
+# Level 2: an LLM decides. One shared brain, provider-specific dialects.
 
-CLAUDE_SYSTEM = """\
+SYSTEM_PROMPT = """\
 You are the captain in Taipan!, the classic 1982 trading game set in
 the 1860s China trade. You will be shown the game state and a prompt
 with the legal moves; answer with your chosen move.
@@ -216,20 +232,25 @@ n | debt is manageable, avoid Wu's 10%/month
 """
 
 
-class ClaudeCaptain:
-    name = "claude"
+class LLMCaptain:
+    """Shared agent brain: observation building, decision-point
+    filtering, output validation. Subclasses implement one method —
+    the provider API call."""
 
-    def __init__(self, model, effort, verbose):
-        import anthropic                       # lazy: only for AI mode
-        # Zero-arg client: resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
-        # or an `ant auth login` profile automatically.
-        self.client = anthropic.Anthropic()
-        self.model = model
-        self.effort = effort
+    name = "llm"
+    firm = "LLM & Co."
+
+    def __init__(self, verbose):
         self.verbose = verbose
         self.fallback = RulesCaptain()         # when the model misfires
         self.ai_calls = 0
 
+    # -- subclasses implement this ------------------------------------
+    def _complete(self, system, user):
+        """Send one (system, user) exchange, return the reply text."""
+        raise NotImplementedError
+
+    # -- shared loop logic ---------------------------------------------
     def answer(self, event, transcript):
         prompt = event["prompt"]
         kind = prompt["kind"]
@@ -241,37 +262,32 @@ class ClaudeCaptain:
         if kind in ("pause", "ack"):
             return ""
         if kind == "text":
-            return "Claude & Co."
+            return self.firm
 
-        move = self._ask_claude(event, transcript)
+        self.ai_calls += 1
+        try:
+            reply = self._complete(SYSTEM_PROMPT, self._describe(event,
+                                                                 transcript))
+        except Exception as exc:               # network blip, rate limit
+            if self.verbose:
+                print(f"      [{self.name} API error: {exc}; "
+                      f"rules fallback]")
+            return self.fallback.answer(event, transcript)
+
+        move, _, reason = (reply or "").strip().partition("|")
+        move = move.strip().lower()
+        if self.verbose and reason.strip():
+            print(f"      [{self.name}: {reason.strip()[:100]}]")
+
         valid = self._validate(move, prompt)
         if valid is not None:
             return valid
         # The model answered something illegal (it happens!) —
         # log it and fall back to the rules captain. Always validate.
         if self.verbose:
-            print(f"      [invalid AI move {move!r}; using rules fallback]")
+            print(f"      [invalid {self.name} move {move!r}; "
+                  f"rules fallback]")
         return self.fallback.answer(event, transcript)
-
-    def _ask_claude(self, event, transcript):
-        self.ai_calls += 1
-        situation = self._describe(event, transcript)
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4000,                   # room for adaptive thinking
-            thinking={"type": "adaptive"},
-            output_config={"effort": self.effort},
-            system=CLAUDE_SYSTEM,
-            messages=[{"role": "user", "content": situation}],
-        )
-        if response.stop_reason == "refusal":
-            return ""                          # extremely unlikely here
-        text = next((b.text for b in response.content
-                     if b.type == "text"), "")
-        move, _, reason = text.strip().partition("|")
-        if self.verbose and reason.strip():
-            print(f"      [claude: {reason.strip()}]")
-        return move.strip().lower()
 
     def _describe(self, event, transcript):
         """Compact, model-friendly view of the situation. Everything
@@ -331,11 +347,114 @@ class ClaudeCaptain:
         return None
 
 
+def _http_json(url, headers, body, retries=2):
+    """Tiny JSON POST helper with one retry for transient errors —
+    used by the providers we call over raw REST."""
+    payload = json.dumps(body).encode()
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json", **headers})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503, 529) and attempt < retries:
+                time.sleep(2 * (attempt + 1))
+                continue
+            detail = exc.read().decode(errors="replace")[:200]
+            raise RuntimeError(f"HTTP {exc.code}: {detail}") from None
+
+
+class ClaudeCaptain(LLMCaptain):
+    """Anthropic's Claude, via the official SDK."""
+    name = "claude"
+    firm = "Claude (Anthropic)"
+
+    def __init__(self, model, effort, verbose):
+        super().__init__(verbose)
+        import anthropic                       # lazy: only for this mode
+        # Zero-arg client: resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+        # or an `ant auth login` profile automatically.
+        self.client = anthropic.Anthropic()
+        if not (getattr(self.client, "api_key", None)
+                or getattr(self.client, "auth_token", None)):
+            raise RuntimeError("no Anthropic credentials (set "
+                               "ANTHROPIC_API_KEY or run `ant auth login`)")
+        self.model = model
+        self.effort = effort
+
+    def _complete(self, system, user):
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=4000,                   # room for adaptive thinking
+            thinking={"type": "adaptive"},
+            output_config={"effort": self.effort},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        if response.stop_reason == "refusal":
+            return ""                          # extremely unlikely here
+        return next((b.text for b in response.content
+                     if b.type == "text"), "")
+
+
+class GrokCaptain(LLMCaptain):
+    """xAI's Grok, via its (OpenAI-compatible) REST API."""
+    name = "grok"
+    firm = "Grok (xAI)"
+
+    def __init__(self, model, verbose):
+        super().__init__(verbose)
+        self.key = os.environ.get("XAI_API_KEY")
+        if not self.key:
+            raise RuntimeError("XAI_API_KEY is not set")
+        self.model = model
+
+    def _complete(self, system, user):
+        data = _http_json(
+            "https://api.x.ai/v1/chat/completions",
+            {"Authorization": f"Bearer {self.key}"},
+            {"model": self.model,
+             "messages": [{"role": "system", "content": system},
+                          {"role": "user", "content": user}],
+             "max_tokens": 2000})
+        return data["choices"][0]["message"]["content"] or ""
+
+
+class GeminiCaptain(LLMCaptain):
+    """Google's Gemini, via the Generative Language REST API."""
+    name = "gemini"
+    firm = "Gemini (Google)"
+
+    def __init__(self, model, verbose):
+        super().__init__(verbose)
+        self.key = (os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GOOGLE_API_KEY"))
+        if not self.key:
+            raise RuntimeError("GEMINI_API_KEY is not set")
+        self.model = model
+
+    def _complete(self, system, user):
+        data = _http_json(
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.model}:generateContent",
+            {"x-goog-api-key": self.key},
+            {"system_instruction": {"parts": [{"text": system}]},
+             "contents": [{"role": "user", "parts": [{"text": user}]}],
+             "generationConfig": {"maxOutputTokens": 2000}})
+        candidates = data.get("candidates") or []
+        if not candidates:                     # safety block or empty
+            return ""
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts)
+
+
 # ----------------------------------------------------------------------
 # The agent loop itself: observe -> reason -> act.
 
-def play(client, captain, max_steps, verbose):
-    event = client.new_game()
+def play(client, captain, max_steps, verbose, daily=False):
+    event = client.new_game(daily=daily)
     transcript = []
     for step in range(1, max_steps + 1):
         # OBSERVE: collect what happened since our last move
@@ -346,13 +465,15 @@ def play(client, captain, max_steps, verbose):
                     print(f"   | {message['text']}")
         prompt = event["prompt"]
         if prompt["kind"] == "end":
-            print(f"\nGAME OVER after {step} steps: "
+            print(f"\n[{captain.name}] GAME OVER after {step} steps: "
                   f"score {prompt['score']:,} ({prompt['rating']})")
-            if isinstance(captain, ClaudeCaptain):
-                print(f"Model calls spent: {captain.ai_calls} "
+            if isinstance(captain, LLMCaptain):
+                print(f"[{captain.name}] model calls: {captain.ai_calls} "
                       f"({captain.ai_calls * 100 // step}% of steps — "
                       f"decision-point filtering at work)")
-            return prompt["score"]
+            return {"captain": captain.name, "score": prompt["score"],
+                    "rating": prompt["rating"], "steps": step,
+                    "ai_calls": getattr(captain, "ai_calls", 0)}
 
         # REASON: pick a move
         move = captain.answer(event, transcript)
@@ -362,42 +483,85 @@ def play(client, captain, max_steps, verbose):
 
         # ACT: send it back
         event = client.step(move)
-    print(f"\nStopped at --max-steps {max_steps} (game unfinished).")
-    return None
+    print(f"\n[{captain.name}] stopped at --max-steps {max_steps} "
+          f"(game unfinished).")
+    return {"captain": captain.name, "score": None, "rating": "-",
+            "steps": max_steps, "ai_calls": getattr(captain, "ai_calls", 0)}
+
+
+def build_captain(which, args):
+    if which == "rules":
+        return RulesCaptain()
+    if which == "claude":
+        return ClaudeCaptain(args.claude_model, args.effort, args.verbose)
+    if which == "grok":
+        return GrokCaptain(args.grok_model, args.verbose)
+    if which == "gemini":
+        return GeminiCaptain(args.gemini_model, args.verbose)
+    raise ValueError(which)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Play Taipan! through its API with a bot or with "
-                    "Claude — a teaching example of the agent loop.")
+        description="Play Taipan! through its API with a rules bot or an "
+                    "LLM — a teaching example of the agent loop.")
     parser.add_argument("--server", default="http://127.0.0.1:8000",
                         help="game server (default: local)")
-    parser.add_argument("--captain", choices=["rules", "claude"],
+    parser.add_argument("--captain",
+                        choices=["rules", "claude", "grok", "gemini"],
                         default="rules")
-    parser.add_argument("--model", default="claude-opus-4-8",
-                        help="model for --captain claude "
-                             "(claude-haiku-4-5 is the budget option)")
+    parser.add_argument("--compare", action="store_true",
+                        help="play every provider with a configured key "
+                             "(plus the rules baseline) on the same "
+                             "daily seed and print a comparison table")
+    parser.add_argument("--daily", action="store_true",
+                        help="play the daily challenge: same seed for "
+                             "every captain today — the fair comparison")
+    parser.add_argument("--claude-model", default="claude-opus-4-8",
+                        help="Anthropic model (claude-haiku-4-5 = budget)")
     parser.add_argument("--effort", default="low",
                         choices=["low", "medium", "high"],
-                        help="thinking effort per decision (default low; "
-                             "higher plays better and costs more)")
+                        help="Claude thinking effort per decision")
+    parser.add_argument("--grok-model", default="grok-4",
+                        help="xAI model name")
+    parser.add_argument("--gemini-model", default="gemini-2.5-pro",
+                        help="Google model name")
     parser.add_argument("--max-steps", type=int, default=5000)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    if args.captain == "claude":
-        try:
-            captain = ClaudeCaptain(args.model, args.effort, args.verbose)
-        except Exception as exc:
-            sys.exit(f"Could not create the Claude client ({exc}). "
-                     f"Install the SDK (pip install anthropic / uv run "
-                     f"--with anthropic) and set ANTHROPIC_API_KEY or "
-                     f"run `ant auth login`.")
-    else:
-        captain = RulesCaptain()
+    if args.compare:
+        results = []
+        for which in ("rules", "claude", "grok", "gemini"):
+            try:
+                captain = build_captain(which, args)
+            except Exception as exc:
+                print(f"[{which}] skipped: {exc}")
+                continue
+            print(f"\n===== {captain.firm} sets sail =====")
+            client = GameClient(args.server)
+            results.append(play(client, captain, args.max_steps,
+                                args.verbose, daily=True))
+        if results:
+            print("\n===== RESULTS (same daily seed) =====")
+            print(f"{'captain':<10} {'score':>12} {'rating':<15} "
+                  f"{'steps':>6} {'AI calls':>9}")
+            for r in sorted(results,
+                            key=lambda r: (r['score'] is None,
+                                           -(r['score'] or 0))):
+                score = f"{r['score']:,}" if r["score"] is not None else "-"
+                print(f"{r['captain']:<10} {score:>12} {r['rating']:<15} "
+                      f"{r['steps']:>6} {r['ai_calls']:>9}")
+            print("\nThe daily leaderboard in the game UI shows the same "
+                  "standings: [scores] on the title screen.")
+        return
 
+    try:
+        captain = build_captain(args.captain, args)
+    except Exception as exc:
+        sys.exit(f"Could not create the {args.captain} captain: {exc}")
     client = GameClient(args.server)
-    play(client, captain, args.max_steps, args.verbose)
+    play(client, captain, args.max_steps, args.verbose, daily=args.daily)
 
 
 if __name__ == "__main__":

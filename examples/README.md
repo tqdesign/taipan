@@ -55,16 +55,58 @@ Hard-coded heuristics: sell what's pricey, buy what's cheap, fight
 when armed, pay Li Yuen, repay Wu. It teaches the *loop* — and it's
 the baseline the AI must beat.
 
-**Level 2 — Claude as captain:**
+**Level 2 — an LLM as captain.** Three providers are wired in, each
+using its own API key:
+
+| Captain | Provider | API key env var | Model flag (default) |
+|---|---|---|---|
+| `--captain claude` | Anthropic | `ANTHROPIC_API_KEY` (or `ant auth login`) | `--claude-model claude-opus-4-8` |
+| `--captain grok`   | xAI       | `XAI_API_KEY`     | `--grok-model grok-4` |
+| `--captain gemini` | Google    | `GEMINI_API_KEY`  | `--gemini-model gemini-2.5-pro` |
 
 ```sh
 uv run --with anthropic python examples/ai_captain.py \
     --captain claude --verbose
+uv run python examples/ai_captain.py --captain grok --verbose
+uv run python examples/ai_captain.py --captain gemini --verbose
 ```
 
-Credentials resolve automatically from `ANTHROPIC_API_KEY` or an
-`ant auth login` profile. Every real decision goes to the model, which
-answers with a move and a one-line reason you'll see in the log.
+Every real decision goes to the model, which answers with a move and a
+one-line reason you'll see in the log. All three captains share the
+same brain — observation building, validation, filtering — and differ
+*only* in the API call (Claude via the official SDK; Grok and Gemini
+via their own REST APIs, no extra dependencies). That's a lesson in
+itself: the agent loop is provider-agnostic even though every provider
+speaks a different dialect.
+
+## Comparing the models
+
+```sh
+uv run --with anthropic python examples/ai_captain.py --compare
+```
+
+`--compare` plays one game per provider you have a key for (plus the
+rules baseline), **all on the same seed** via the game's daily
+challenge, and prints a table:
+
+```
+===== RESULTS (same daily seed) =====
+captain         score rating           steps  AI calls
+claude         12,405 Master Taipan      612       142
+gemini          3,180 Taipan             548       131
+grok            1,022 Taipan             590       137
+rules            -425 Galley Hand        401         0
+```
+
+Same starting prices, same world — score differences are strategy, not
+luck. The game's own **daily leaderboard** shows the identical
+standings (each captain signs its firm name as "Claude (Anthropic)",
+"Grok (xAI)", "Gemini (Google)"), so students can watch the benchmark
+on the game's title screen via [scores]. For single fair runs, add
+`--daily` to any `--captain` command.
+
+The model-name defaults age quickly — check each provider's docs and
+pass the current flagship (or budget) model via the flags.
 
 ## The lessons baked into the code
 
