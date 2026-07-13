@@ -293,6 +293,52 @@ body {
 #about-body em { font-style: normal; color: var(--green-dim); }
 #about-body a { color: var(--green); }
 
+#detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 17;                 /* above the scores modal */
+}
+
+#detail-panel {
+  background: var(--bg);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 24px rgba(59, 255, 112, 0.35);
+  padding: 18px 24px;
+  max-width: 620px;
+  width: calc(100% - 40px);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#detail-body {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--green-dark) transparent;
+}
+
+#detail-body .line { margin: 3px 0; }
+#detail-body .head {
+  margin: 12px 0 4px;
+  text-decoration: underline;
+  letter-spacing: 1px;
+}
+#detail-body .dim { color: var(--green-dim); }
+#detail-body .when { color: var(--green-dim); margin-right: 8px; }
+#detail-body svg {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: 100px;
+  border: 1px solid var(--green-dark);
+  background: rgba(6, 24, 12, 0.6);
+  margin: 6px 0;
+}
+
 #journal-overlay {
   position: fixed;
   inset: 0;
@@ -346,6 +392,12 @@ body {
 }
 
 #scores-body .line { margin: 3px 0; white-space: nowrap; }
+#scores-body .line.clickable { cursor: pointer; }
+#scores-body .line.clickable:hover {
+  background: var(--green);
+  color: #02180a;
+  text-shadow: none;
+}
 #scores-body .board-title {
   margin: 14px 0 6px;
   text-decoration: underline;

@@ -41,6 +41,8 @@ from taipan.engine import ENGINE_VERSION, Game
 ROOT = Path(__file__).parent
 SAVE_DIR = ROOT / "saves"
 CHALLENGE_DIR = SAVE_DIR / "challenges"
+SCORE_DETAIL_DIR = SAVE_DIR / "scoredetails"
+MAX_SCORE_DETAILS = 400
 HIGHSCORE_FILE = SAVE_DIR / "highscores.json"
 DAILY_FILE = SAVE_DIR / "dailyscores.json"
 ACHIEVEMENT_FILE = SAVE_DIR / "achievements.json"
@@ -314,6 +316,33 @@ def _load_json(path: Path, default):
     return default
 
 
+def _write_score_detail(event: dict, entry: dict) -> str:
+    """Persist the full end-of-game picture (stats, character,
+    net-worth curve, journal, achievements) so leaderboard entries can
+    be opened later. Returns the detail id."""
+    prompt = event.get("prompt") or {}
+    detail_id = uuid.uuid4().hex
+    detail = {
+        **entry,
+        "stats": prompt.get("stats") or {},
+        "character": prompt.get("character") or {},
+        "net_history": prompt.get("net_history") or [],
+        "journal": prompt.get("journal") or [],
+        "achievements": prompt.get("achievements") or [],
+    }
+    SCORE_DETAIL_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(SCORE_DETAIL_DIR.glob("*.json"),
+                   key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in files[MAX_SCORE_DETAILS - 1:]:
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    (SCORE_DETAIL_DIR / f"{detail_id}.json").write_text(
+        json.dumps(detail), encoding="utf-8")
+    return detail_id
+
+
 def _record_highscore(event: dict):
     prompt = event.get("prompt") or {}
     state = event.get("state") or {}
@@ -326,6 +355,7 @@ def _record_highscore(event: dict):
         "date": f"{state.get('month', '?')} {state.get('year', '?')}",
         "when": time.strftime("%Y-%m-%d"),
     }
+    entry["id"] = _write_score_detail(event, entry)
     with _score_lock:
         SAVE_DIR.mkdir(exist_ok=True)
         scores = _load_json(HIGHSCORE_FILE, [])
@@ -520,6 +550,16 @@ def challenge_info(challenge_id: str):
 @app.get("/api/version")
 def version():
     return {"version": APP_VERSION}
+
+
+@app.get("/api/score/{detail_id}")
+def score_detail(detail_id: str, request: Request):
+    _rate_limit(request, "state", STATE_READS_PER_MINUTE)
+    _check_hex_id(detail_id)
+    path = SCORE_DETAIL_DIR / f"{detail_id}.json"
+    if not path.exists():
+        raise HTTPException(404, "No such game record")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @app.get("/api/highscores")

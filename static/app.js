@@ -525,6 +525,101 @@ function scoreLine(s, i) {
        + `${s.score.toLocaleString()} (${s.rating}, ${s.date})${tag}`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Game record: click a leaderboard entry to see how it was played */
+
+function detailOpen() {
+  return !$("detail-overlay").classList.contains("hidden");
+}
+
+function closeDetail() {
+  $("detail-overlay").classList.add("hidden");
+}
+
+function addLine(parent, text, cls) {
+  const div = document.createElement("div");
+  div.className = `line ${cls || ""}`;
+  div.textContent = text;
+  parent.appendChild(div);
+  return div;
+}
+
+async function openScoreDetail(detailId) {
+  let d;
+  try {
+    d = await api(`/api/score/${detailId}`);
+  } catch (e) {
+    return;                                    // record pruned; ignore
+  }
+  const body = $("detail-body");
+  body.innerHTML = "";
+  const tag = d.mode === "extended" ? " [extended]" : " [classic]";
+  const daily = d.daily ? ` — daily ${d.daily}` : "";
+  addLine(body, `${d.firm} — ${(d.score || 0).toLocaleString()} `
+                + `(${d.rating})${tag}${daily}`, "head");
+  addLine(body, `Retired ${d.date}, played ${d.when}`, "dim");
+
+  if (d.net_history && d.net_history.length >= 2) {
+    const chart = document.createElement("div");
+    chart.innerHTML = chartMarkup(d.net_history, null, "");
+    body.appendChild(chart);
+  }
+
+  const c = d.character || {};
+  if (c.bravery) {
+    addLine(body, "The captain's character", "head");
+    const pct = c.bravery.pct !== null && c.bravery.pct !== undefined
+      ? ` (${c.bravery.pct}% of battle orders were Fight)` : "";
+    addLine(body, `Bravery: ${c.bravery.title}${pct}`);
+    const rec = c.battle_record || {};
+    addLine(body, `Battle record: ${rec.won || 0} won, `
+                  + `${rec.fled || 0} fled, ${rec.ships_sunk || 0} `
+                  + `ships sunk`);
+    if (c.trade) {
+      addLine(body, `Trader: ${c.trade.title} — profit `
+                    + `${(c.trade.profit || 0).toLocaleString()} on `
+                    + `${(c.trade.sold_units || 0).toLocaleString()} `
+                    + `units sold`);
+    }
+  }
+
+  const s = d.stats || {};
+  addLine(body, "The story of the voyages", "head");
+  addLine(body, `Battles: ${s.battles || 0}   Booty and prizes: `
+                + `${(s.booty || 0).toLocaleString()}   Cargo `
+                + `jettisoned: ${(s.cargo_thrown || 0).toLocaleString()}`);
+  addLine(body, `Donated to Li Yuen: ${(s.donated || 0).toLocaleString()}`
+                + `   Interest paid to Wu: `
+                + `${(s.interest_paid || 0).toLocaleString()}`);
+  addLine(body, `Robbed: ${s.robbed || 0}   Storms survived: `
+                + `${s.storms || 0}   Seizures: ${s.seizures || 0}`
+                + (s.bank_lost
+                   ? `   Lost to bank failures: `
+                     + `${s.bank_lost.toLocaleString()}` : ""));
+
+  if ((d.achievements || []).length) {
+    addLine(body, "Honors earned", "head");
+    for (const a of d.achievements) {
+      addLine(body, `* ${a.name} — ${a.desc}`);
+    }
+  }
+
+  if ((d.journal || []).length) {
+    addLine(body, "Captain's log", "head");
+    for (const e of d.journal) {
+      const div = document.createElement("div");
+      div.className = "line";
+      const when = document.createElement("span");
+      when.className = "when";
+      when.textContent = e.when;
+      div.appendChild(when);
+      div.appendChild(document.createTextNode(e.text));
+      body.appendChild(div);
+    }
+  }
+  $("detail-overlay").classList.remove("hidden");
+}
+
 async function openScores() {
   let data;
   try {
@@ -550,6 +645,11 @@ async function openScores() {
       const d = document.createElement("div");
       d.className = "line";
       d.textContent = scoreLine(s, i);
+      if (s.id) {                       // older entries have no record
+        d.classList.add("clickable");
+        d.title = "Click to see how this game was played";
+        d.onclick = () => openScoreDetail(s.id);
+      }
       body.appendChild(d);
     });
   };
@@ -616,8 +716,8 @@ async function showHighscores(wasDaily) {
   } catch (e) { /* scores are optional */ }
 }
 
-function renderNetChart(history, ghost) {
-  if (!history || history.length < 2) return;
+function chartMarkup(history, ghost, ghostLabel) {
+  if (!history || history.length < 2) return "";
   const W = 460, H = 100, PAD = 4;
   const all = ghost ? history.concat(ghost) : history;
   const xMin = Math.min(...all.map((h) => h[0]));
@@ -631,12 +731,9 @@ function renderNetChart(history, ghost) {
   const line = (h) => h.map((p) => `${px(p[0]).toFixed(1)},`
                                    + `${py(p[1]).toFixed(1)}`).join(" ");
   const zero = py(0);
-  const div = document.createElement("div");
-  div.className = "line chart";
-  div.innerHTML =
-    `<div class="chart-title">Net worth over `
+  return `<div class="chart-title">Net worth over `
     + `${Math.max(...history.map((h) => h[0]))} months`
-    + `${ghost ? " (dim line: your best run)" : ""}</div>`
+    + `${ghost ? ` (dim line: ${ghostLabel})` : ""}</div>`
     + `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
     + `<line x1="0" y1="${zero}" x2="${W}" y2="${zero}"`
     + ` class="chart-zero"/>`
@@ -645,6 +742,14 @@ function renderNetChart(history, ghost) {
     + `<polyline points="${line(history)}" class="chart-line"/></svg>`
     + `<div class="chart-title">peak `
     + `${Math.max(...history.map((h) => h[1])).toLocaleString()}</div>`;
+}
+
+function renderNetChart(history, ghost) {
+  const markup = chartMarkup(history, ghost, "your best run");
+  if (!markup) return;
+  const div = document.createElement("div");
+  div.className = "line chart";
+  div.innerHTML = markup;
   $("log").appendChild(div);
   $("report").scrollTop = $("report").scrollHeight;
 }
@@ -935,7 +1040,9 @@ function start(key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (aboutOpen()) {
+    if (detailOpen()) {
+      closeDetail();
+    } else if (aboutOpen()) {
       closeAbout();
     } else if (helpOpen()) {
       closeHelp();
@@ -952,7 +1059,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (optionsOpen() || scoresOpen() || journalOpen() || helpOpen()
-      || aboutOpen()) {
+      || aboutOpen() || detailOpen()) {
     return;
   }
   if (!started) {
@@ -1006,10 +1113,15 @@ document.addEventListener("click", (e) => {
       || e.target.closest("#journal-panel")
       || e.target.closest("#help-panel")
       || e.target.closest("#about-panel")
+      || e.target.closest("#detail-panel")
       || e.target.closest("#splash-help")) {
     return;
   }
-  if (aboutOpen()) {            // clicking the dimmed backdrop closes
+  if (detailOpen()) {           // clicking the dimmed backdrop closes
+    closeDetail();
+    return;
+  }
+  if (aboutOpen()) {
     closeAbout();
     return;
   }
@@ -1063,6 +1175,9 @@ $("about-btn").addEventListener("click", () => {
   $("about-overlay").classList.remove("hidden");
 });
 $("about-close").addEventListener("click", closeAbout);
+
+/* Game record UI */
+$("detail-close").addEventListener("click", closeDetail);
 
 /* Captain's log UI */
 $("journal-close").addEventListener("click", closeJournal);

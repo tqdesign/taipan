@@ -211,7 +211,11 @@ class Game:
                       "robbed": 0, "storms": 0, "seizures": 0,
                       "rumors_heard": 0, "rumors_true": 0,
                       "bribes": 0, "charters_done": 0,
-                      "charters_failed": 0, "bank_lost": 0}
+                      "charters_failed": 0, "bank_lost": 0,
+                      "fights": 0, "runs": 0, "throws": 0,
+                      "battles_won": 0, "battles_fled": 0,
+                      "bought_value": 0, "bought_units": 0,
+                      "sold_value": 0, "sold_units": 0}
         # Extended-mode state.
         self.wu_rate = 0.10       # Wu's monthly interest
         self.wu_payoffs = 0       # times the debt was cleared in full
@@ -1077,6 +1081,8 @@ class Game:
         self.cash -= amount * self.price[i]
         self.hold_[i] += amount
         self.hold -= amount
+        self.stats["bought_value"] += amount * self.price[i]
+        self.stats["bought_units"] += amount
 
     def _sell(self):
         i = yield from self._ask_item(
@@ -1096,6 +1102,8 @@ class Game:
         self.hold_[i] -= amount
         self.cash += amount * self.price[i]
         self.hold += amount
+        self.stats["sold_value"] += amount * self.price[i]
+        self.stats["sold_units"] += amount
 
     @staticmethod
     def _pct_presets(total):
@@ -1492,6 +1500,7 @@ class Game:
                 f"{self.firm}, what shall we do??", opts,
                 default="frt"[orders - 1] if orders else None)
             orders = "frt".index(c) + 1
+            self.stats[("fights", "runs", "throws")[orders - 1]] += 1
             self.battle["orders_label"] = ["", "Fight", "Run",
                                            "Throw Cargo"][orders]
 
@@ -1546,6 +1555,7 @@ class Game:
                         self.prize = self.r(self.booty) // 2 + 250
                     yield from self._pause()
                     self.battle = None
+                    self.stats["battles_won"] += 1
                     return BATTLE_WON
             elif orders == 3:
                 if not (yield from self._throw_cargo()):
@@ -1569,6 +1579,7 @@ class Game:
 
             if escaped:
                 self.battle = None
+                self.stats["battles_fled"] += 1
                 return BATTLE_FLED
 
             # The enemy fires (BASIC 5500)
@@ -1591,6 +1602,8 @@ class Game:
                 return BATTLE_INTERRUPTED
 
         self.battle = None
+        key = "battles_won" if orders == 1 else "battles_fled"
+        self.stats[key] += 1
         return BATTLE_WON if orders == 1 else BATTLE_FLED
 
     def _try_escape(self, ok):
@@ -1651,6 +1664,48 @@ class Game:
             self.say(f"There's nothing there, {self.firm}!")
         yield from self._pause(1200)
         return True
+
+    def _character(self):
+        """The captain's character, derived from how they actually
+        played: bravery from battle orders, a win/flee record, and a
+        trader rank from realized trading profit."""
+        s = self.stats
+        orders = s["fights"] + s["runs"] + s["throws"]
+        if orders == 0:
+            bravery_pct, bravery = None, "Untested"
+        else:
+            bravery_pct = 100 * s["fights"] // orders
+            if bravery_pct >= 75:
+                bravery = "Lionheart"
+            elif bravery_pct >= 50:
+                bravery = "Bold"
+            elif bravery_pct >= 25:
+                bravery = "Cautious"
+            else:
+                bravery = "Fleet of Foot"
+        profit = s["sold_value"] - s["bought_value"]
+        if profit >= 50_000_000:
+            trader = "Master of the China Trade"
+        elif profit >= 5_000_000:
+            trader = "Merchant Prince"
+        elif profit >= 500_000:
+            trader = "Shrewd Trader"
+        elif profit > 0:
+            trader = "Honest Peddler"
+        else:
+            trader = "Generous to a Fault"
+        return {
+            "bravery": {"title": bravery, "pct": bravery_pct,
+                        "fights": s["fights"], "runs": s["runs"],
+                        "throws": s["throws"]},
+            "battle_record": {"won": s["battles_won"],
+                              "fled": s["battles_fled"],
+                              "fought": s["battles"],
+                              "ships_sunk": s["ships_sunk"]},
+            "trade": {"title": trader, "profit": int(profit),
+                      "bought_units": s["bought_units"],
+                      "sold_units": s["sold_units"]},
+        }
 
     def _achievements(self, score, rating, net):
         """Badges earned this run, from the tracked statistics."""
@@ -1732,7 +1787,18 @@ class Game:
             self.say("The crew has requested that you stay on shore for "
                      "their safety!!")
         s = self.stats
+        character = self._character()
         self.head("The story of your voyages:")
+        brav = character["bravery"]
+        rec = character["battle_record"]
+        self.say(f"Bravery: {brav['title']}"
+                 + (f" ({brav['pct']}% of battle orders were Fight)"
+                    if brav["pct"] is not None else "")
+                 + f"   Record: {rec['won']} won, {rec['fled']} fled")
+        trade = character["trade"]
+        self.say(f"Trader: {trade['title']} - trading profit "
+                 f"{fancy(trade['profit'])} on {trade['sold_units']:,} "
+                 f"units sold")
         self.say(f"Battles fought: {s['battles']}   Ships sunk: "
                  f"{s['ships_sunk']}" + (f"   Prizes taken: {s['prizes']}"
                                          if s['prizes'] else ""))
@@ -1761,5 +1827,6 @@ class Game:
                            "rating": rating, "score": score,
                            "mode": self.mode, "daily": self.daily,
                            "stats": s, "net_history": self.net_history,
+                           "character": character,
                            "achievements": achievements,
                            "journal": self.journal})

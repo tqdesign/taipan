@@ -15,6 +15,8 @@ def client(tmp_path, monkeypatch):
     save_dir = tmp_path / "saves"
     monkeypatch.setattr(main, "SAVE_DIR", save_dir)
     monkeypatch.setattr(main, "CHALLENGE_DIR", save_dir / "challenges")
+    monkeypatch.setattr(main, "SCORE_DETAIL_DIR",
+                        save_dir / "scoredetails")
     monkeypatch.setattr(main, "HIGHSCORE_FILE",
                         save_dir / "highscores.json")
     monkeypatch.setattr(main, "DAILY_FILE", save_dir / "dailyscores.json")
@@ -233,6 +235,25 @@ def test_cache_headers(client):
     assert client.get("/").headers["cache-control"] == "no-cache"
     assert "max-age=86400" in client.get(
         "/fonts/VT323-Regular.ttf").headers["cache-control"]
+
+
+def test_score_details_are_browsable(client):
+    """Finished games leave a record: the leaderboard entry carries an
+    id, and /api/score/{id} returns the full picture (character,
+    stats, chart data, journal)."""
+    play_to_end(client, seed=11)
+    scores = client.get("/api/highscores").json()["scores"]
+    assert scores and scores[0].get("id")
+    detail = client.get(f"/api/score/{scores[0]['id']}").json()
+    assert detail["firm"] == "Server Test Co."
+    assert detail["score"] == scores[0]["score"]
+    assert "bravery" in detail["character"]
+    assert "battles" in detail["stats"]
+    assert isinstance(detail["net_history"], list)
+    assert isinstance(detail["journal"], list)
+    # unknown record 404s; malformed id rejected
+    assert client.get(f"/api/score/{'0' * 32}").status_code == 404
+    assert client.get("/api/score/nonsense").status_code == 400
 
 
 def test_version_endpoint(client):

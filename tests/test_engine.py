@@ -431,6 +431,49 @@ def test_classic_voyage_is_always_one_month():
     raise AssertionError("no clean voyage found in 50 seeds")
 
 
+def test_character_bravery_and_trader_titles():
+    g = Game(seed=7)
+    c = g._character()
+    assert c["bravery"]["title"] == "Untested"
+    assert c["trade"]["title"] == "Generous to a Fault"
+
+    g.stats.update(fights=9, runs=1, throws=0,
+                   battles_won=7, battles_fled=1,
+                   sold_value=6_200_000, bought_value=800_000,
+                   sold_units=1200, bought_units=1300)
+    c = g._character()
+    assert c["bravery"]["title"] == "Lionheart"
+    assert c["bravery"]["pct"] == 90
+    assert c["battle_record"]["won"] == 7
+    assert c["trade"]["title"] == "Merchant Prince"
+    assert c["trade"]["profit"] == 5_400_000
+
+    g.stats.update(fights=1, runs=8, throws=1)
+    assert g._character()["bravery"]["title"] == "Fleet of Foot"
+
+
+def test_trading_volumes_tracked():
+    g, gen, ev = start_at_menu()
+    g.cash = 10 * g.price[3]
+    gen.send("b")
+    gen.send("g")
+    ev = gen.send("5")                      # buy 5 General Cargo
+    assert g.stats["bought_units"] == 5
+    assert g.stats["bought_value"] == 5 * g.price[3]
+    gen.send("s")
+    gen.send("g")
+    gen.send("5")                           # sell them back
+    assert g.stats["sold_units"] == 5
+    assert g.stats["sold_value"] == 5 * g.price[3]
+
+
+def test_end_event_carries_character():
+    g = Game(seed=3, mode="classic")
+    ev = next(g._final_stats())
+    assert "bravery" in ev["prompt"]["character"]
+    assert "trade" in ev["prompt"]["character"]
+
+
 def test_bank_crisis_loss_bounds():
     from taipan.engine import BANK_INSURED
     g = Game(seed=9, mode="extended")
