@@ -595,6 +595,39 @@ def test_extended_caps_fleet_size_classic_does_not():
     assert big_li > MAX_LI_YUEN_FLEET
 
 
+def test_power_scaling_extended_only():
+    """Pirates scale with how out-armed you've gotten, in extended
+    only - so trading up to a bigger ship doesn't just make survival
+    easier. Classic always gets a flat 1.0 multiplier."""
+    g = Game(seed=1, mode="classic")
+    g.capacity, g.guns = 5000, 50
+    assert g._power_scaling() == 1.0
+
+    ge = Game(seed=1, mode="extended")
+    ge.capacity, ge.guns = 60, 0            # starting loadout: no bonus
+    assert ge._power_scaling() == 1.0
+
+    ge.capacity, ge.guns = 460, 0            # 400 hold-equivalent bought
+    assert ge._power_scaling() == 2.0
+
+
+def test_storm_ratio_floor_extended_only():
+    """A huge, undamaged ship is nearly storm-proof by the damage/
+    capacity ratio alone; extended gives storms a floor so tonnage
+    can't make them harmless. Classic is untouched."""
+    gc = Game(seed=1, mode="classic")
+    gc.damage, gc.capacity = 0, 1000
+    assert gc._storm_ratio() == 0.0
+    gc.damage = 500
+    assert gc._storm_ratio() == 0.5
+
+    ge = Game(seed=1, mode="extended")
+    ge.damage, ge.capacity = 0, 1000
+    assert ge._storm_ratio() == 0.4          # the floor
+    ge.damage = 500
+    assert ge._storm_ratio() == 0.5          # above the floor: unaffected
+
+
 def test_retire_requires_confirmation():
     g, gen, ev = start_at_menu()
     g.cash = 2_000_000

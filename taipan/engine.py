@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 7
+ENGINE_VERSION = 8
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -1386,7 +1386,7 @@ class Game:
             if self.r(30) == 0:
                 self.say("   I think we're going down!!", cls="warn")
                 yield from self._pause()
-                if self.rand01() * (self.damage / self.capacity * 3) >= 1:
+                if self.rand01() * (self._storm_ratio() * 3) >= 1:
                     self.say("We're going down, Taipan!!", cls="warn")
                     self.log_event("Lost with all hands in a storm.")
                     yield from self._pause(3000)
@@ -1459,6 +1459,24 @@ class Game:
         n = self.r(self.capacity / 5 + self.guns) + 5
         return min(n, MAX_LI_YUEN_FLEET) if self.extended else n
 
+    def _power_scaling(self):
+        """Extended: pirates get tougher the more you've out-armed them,
+        not just with the calendar - so trading up to a bigger ship and
+        buying guns doesn't just make survival easier. 1.0 at the
+        starting loadout (60 hold-equivalent), rising with any capacity
+        or guns bought beyond it. Classic is unaffected."""
+        if not self.extended:
+            return 1.0
+        power = self.capacity + self.guns * 10
+        return 1.0 + max(0, power - 60) / 400
+
+    def _storm_ratio(self):
+        """Odds a storm sinks the ship scale with damage/capacity - so a
+        huge, undamaged ship is normally almost storm-proof. Extended
+        gives storms a floor so tonnage alone can't make them harmless."""
+        ratio = self.damage / self.capacity
+        return max(ratio, 0.4) if self.extended else ratio
+
     # ------------------------------------------------------------------
     # Sea battle (BASIC 5000-5940 / C sea_battle())
     def _sea_battle(self, battle_id, num_ships):
@@ -1478,7 +1496,8 @@ class Game:
             on = sum(1 for hp in slots if hp > 0)
             for i in range(10):
                 if slots[i] == 0 and on < min(self.battle["ships"], 10):
-                    slots[i] = int(self.ec * self.rand01()) + 20
+                    slots[i] = int(self.ec * self._power_scaling()
+                                  * self.rand01()) + 20
                     on += 1
                     self.fx("appear", i)
 
@@ -1601,8 +1620,9 @@ class Game:
                 self.hold += 10
                 self.say(f"The buggers hit a gun, {self.firm}!!",
                          cls="warn")
-            self.damage += (self.rand01() * (self.ed * i * battle_id)
-                            + i / 2)
+            self.damage += (self.rand01()
+                            * (self.ed * self._power_scaling() * i
+                               * battle_id) + i / 2)
             yield from self._pause()
             if battle_id == GENERIC and self.r(20) == 0:
                 self.battle = None
