@@ -100,15 +100,12 @@ _rate_lock = threading.Lock()
 
 def _app_version() -> str:
     """Build stamp vMMDDYY.HHMM. Baked into version.txt by the Docker
-    build; in local dev, derived from the newest source file mtime."""
+    build (UTC); in local dev, today's local date and time when the
+    server starts."""
     stamp = ROOT / "version.txt"
     if stamp.exists():
         return stamp.read_text(encoding="utf-8").strip()
-    sources = [ROOT / "main.py", ROOT / "taipan" / "engine.py",
-               ROOT / "static" / "app.js", ROOT / "static" / "index.html",
-               ROOT / "static" / "style.css"]
-    newest = max(f.stat().st_mtime for f in sources if f.exists())
-    return time.strftime("v%m%d%y.%H%M", time.gmtime(newest))
+    return time.strftime("v%m%d%y.%H%M")
 
 
 APP_VERSION = _app_version()
