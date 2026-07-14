@@ -145,7 +145,7 @@ body {
   top: 28px;
   right: 14px;
   font-size: 13px;
-  color: var(--green-dark);
+  color: var(--green-dim);
   user-select: none;
   z-index: 5;
 }
