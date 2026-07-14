@@ -55,8 +55,15 @@ def answer(prompt, state):
         return "f" if state["guns"] > 0 else "r"   # can't shoot, so flee
     if "How will you sail" in text:
         return state["mode_key"]
+    if "How long will you trade" in text:
+        return "1"                             # full career (measure hazards)
     if "Do you want to start" in text:
         return "2"                             # 5 guns: can fight from turn 1
+    if "seasonal mission" in text.lower() or "charter is offered" in text:
+        return "n"                             # keep the loop simple
+    if "Accept?" in text and ("mission" in text.lower()
+                              or "charter" in text.lower()):
+        return "n"
     if "trade in your" in text:
         return "y"                             # ship upgrade
     if "buy a ship's gun" in text:

@@ -180,8 +180,16 @@ def test_mode_prompt_sets_extended():
     next(gen)
     ev = gen.send("Test Co.")
     assert "How will you sail" in ev["prompt"]["text"]
-    gen.send("2")
+    ev = gen.send("2")
     assert g.mode == "extended" and g.extended is True
+    assert "How long will you trade" in ev["prompt"]["text"]
+    ev = gen.send("2")                      # five-year dash
+    assert g.career == "dash"
+    assert g.career_months == 60
+    assert ev["prompt"]["text"].startswith("Do you want to start")
+    assert {o["key"] for o in ev["prompt"]["options"]} == {"1", "2", "3"}
+    gen.send("3")                           # deep in debt
+    assert (g.cash, g.debt, g.guns) == (200, 12000, 0)
 
 
 def test_daily_forces_classic_and_skips_mode_prompt():
@@ -192,6 +200,7 @@ def test_daily_forces_classic_and_skips_mode_prompt():
     assert ev["prompt"]["text"].startswith("Do you want to start")
     assert g.extended is False
     assert g.snapshot()["daily"] == "2026-07-05"
+    assert {o["key"] for o in ev["prompt"]["options"]} == {"1", "2"}
 
 
 def test_classic_never_reads_extended_rules():
@@ -512,6 +521,84 @@ def test_forced_retirement_after_25_years():
     assert list(gc._forced_retirement_check()) == []
 
 
+def test_five_year_dash_retires_early():
+    from taipan.engine import FIVE_YEAR_DASH_MONTHS, _GameOver
+    g = Game(seed=3, mode="extended")
+    g.career = "dash"
+    g.career_months = FIVE_YEAR_DASH_MONTHS
+    g.year, g.month = 1865, 1                  # time == 61
+    assert g.time == 61
+    gen = g._forced_retirement_check()
+    ev = next(gen)
+    assert any("Five years" in (m.get("text") or "")
+               for m in ev["messages"])
+    with pytest.raises(_GameOver):
+        gen.send("")
+    # still mid-dash: no retirement
+    g2 = Game(seed=3, mode="extended")
+    g2.career = "dash"
+    g2.career_months = FIVE_YEAR_DASH_MONTHS
+    g2.year, g2.month = 1863, 6
+    assert list(g2._forced_retirement_check()) == []
+
+
+def test_mission_delivery_pays_bonus():
+    g = Game(seed=7, mode="extended")
+    g.port = 4
+    g.hold_[2] = 80
+    g.mission = {"title": "Monsoon run", "item": 2, "qty": 50,
+                 "dest": 4, "due": g.time + 2, "bonus": 7000}
+    cash = g.cash
+    gen = g._check_mission()
+    ev = next(gen)
+    assert any("Mission fulfilled" in (m.get("text") or "")
+               for m in ev["messages"])
+    assert g.cash == cash + 7000
+    assert g.hold_[2] == 30 and g.mission is None
+    assert g.stats["missions_done"] == 1
+    assert g.highlights["biggest_haul"][1] == 7000
+
+
+def test_rival_undercuts_held_cargo():
+    # Probabilistic: scan seeds until the rival dumps cargo we hold.
+    for seed in range(200):
+        g = Game(seed=seed, mode="extended")
+        g.rival = "Dent & Co."
+        g.port = 2
+        g.hold_[0] = 30
+        g.cash, g.bank, g.debt = 100, 0, 0
+        g.charter = None
+        g.set_prices()
+        before = g.price[0]
+        gen = g._rival_events()
+        try:
+            ev = next(gen)
+        except StopIteration:
+            continue
+        texts = " ".join(m.get("text") or "" for m in ev["messages"])
+        if "dumping" in texts.lower() or "undercut" in texts.lower():
+            assert g.stats["rival_undercuts"] >= 1
+            assert g.price[0] < before
+            return
+    raise AssertionError("rival never undercut held cargo in 200 seeds")
+
+
+def test_extended_end_carries_highlights():
+    g = Game(seed=7, mode="extended")
+    g._note_haul("Test sale", 12_000)
+    g._note_loss("Test fine", 500)
+    g.rival = "Russell & Co."
+    g.stats["rival_undercuts"] = 2
+    ev = next(g._final_stats())
+    assert ev["prompt"]["highlights"]
+    assert any("Biggest haul" in h for h in ev["prompt"]["highlights"])
+    assert any("Russell" in h for h in ev["prompt"]["highlights"])
+    # classic end has no highlight reel
+    gc = Game(seed=7, mode="classic")
+    evc = next(gc._final_stats())
+    assert evc["prompt"]["highlights"] == []
+
+
 def test_drift_cap_extended_only():
     from taipan.engine import MAX_DRIFT
     g = Game(seed=1, mode="extended")
@@ -707,11 +794,16 @@ def test_achievements_from_stats():
     g.feng_survived = True
     g.max_warehouse = 10000
     g.stats["charters_done"] = 3
+    g.stats["missions_done"] = 3
+    g.stats["rival_battles_won"] = 1
+    g.rival = "Jardine's"
+    g.career = "dash"
     g.refits.add("figurehead")
     ids = {a["id"] for a in g._achievements(60000, "Ma Tsu", 80_000_000)}
     assert {"ma_tsu", "scourge", "fleet_friend", "wus_word",
             "fengs_bane", "storm_rider", "godown_full",
-            "charter_master", "figurehead"} <= ids
+            "charter_master", "figurehead", "mission_man",
+            "rival_rebuke", "dash_taipan"} <= ids
     # a fresh game earns nothing
     g2 = Game(seed=8)
     assert g2._achievements(100, "Galley Hand", 10_000) == []

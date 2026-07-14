@@ -206,6 +206,7 @@ body {
   color: var(--green-dim);
 }
 #venture .charter { color: var(--green); }
+#venture .mission { color: var(--green-dim); }
 
 #pace {
   color: var(--green-dim);

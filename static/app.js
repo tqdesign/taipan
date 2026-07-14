@@ -322,6 +322,10 @@ function renderState(st) {
   const bits = [];
   if (st.charter) bits.push(`<span class="charter">Charter: `
                             + `${st.charter}</span>`);
+  if (st.mission) bits.push(`<span class="mission">Mission: `
+                            + `${st.mission}</span>`);
+  if (st.rival) bits.push(`Rival: ${st.rival}`);
+  if (st.career === "dash") bits.push("Five-year dash");
   if (st.refits && st.refits.length) {
     bits.push(`Refits: ${st.refits.join(", ")}`);
   }
@@ -964,6 +968,27 @@ function showPrompt(p) {
         newGame(false, cid);
       };
       $("prompt-buttons").appendChild(retryBtn);
+    } else if (p.mode === "extended" && sessionId) {
+      // Rematch: freeze this voyage as a challenge, then sail it again.
+      const rematchBtn = document.createElement("button");
+      rematchBtn.textContent = "Rematch (same seas)";
+      rematchBtn.onclick = async () => {
+        try {
+          const d = await api("/api/challenge",
+                              { session_id: sessionId });
+          sessionId = null;
+          prompt = null;
+          challengeId = d.challenge_id;
+          challengeInfo = await fetchChallengeInfo(d.challenge_id);
+          await newGame(false, d.challenge_id);
+        } catch (e) {
+          rematchBtn.textContent = "Failed - try again";
+          setTimeout(() => {
+            rematchBtn.textContent = "Rematch (same seas)";
+          }, 2000);
+        }
+      };
+      $("prompt-buttons").appendChild(rematchBtn);
     }
     const btn = document.createElement("button");
     btn.textContent = "Play again";

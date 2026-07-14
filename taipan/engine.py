@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 10
+ENGINE_VERSION = 11
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -115,7 +115,19 @@ TYPHOON_MONTHS = (7, 8, 9)   # Jul-Sep: storm odds worsen (extended)
 BANK_INSURED = 500_000            # bank failures never touch this much
 BANK_LOSS_MIN, BANK_LOSS_MAX = 0.25, 0.40   # of the balance above it
 FORCED_RETIREMENT_MONTHS = 300    # partners force retirement: 25 years
+FIVE_YEAR_DASH_MONTHS = 60        # five-year dash ends Jan 1865
 MAX_DRIFT = 3                     # base prices cap at 3x the 1860 values
+
+# One-line port personality (extended): shown the first time you arrive.
+PORT_BLURBS = {
+    1: "Hong Kong - Wu and Li Yuen hold court here.",
+    2: "Shanghai - silk and rebels, always hungry.",
+    3: "Nagasaki - strict harbor, rich opium market.",
+    4: "Saigon - French guns and a taste for arms.",
+    5: "Manila - a crossroads; cargo moves fast.",
+    6: "Singapore - safe berths, softer prices.",
+    7: "Batavia - far waters, lax and cheap.",
+}
 
 # Scripted history of the 1860s China coast. Fired on the first arrival
 # on or after the date. Each entry: message, then a list of temporary
@@ -215,7 +227,9 @@ class Game:
                       "fights": 0, "runs": 0, "throws": 0,
                       "battles_won": 0, "battles_fled": 0,
                       "bought_value": 0, "bought_units": 0,
-                      "sold_value": 0, "sold_units": 0}
+                      "sold_value": 0, "sold_units": 0,
+                      "missions_done": 0, "missions_failed": 0,
+                      "rival_undercuts": 0, "rival_battles_won": 0}
         # Extended-mode state.
         self.wu_rate = 0.10       # Wu's monthly interest
         self.wu_payoffs = 0       # times the debt was cleared in full
@@ -227,9 +241,20 @@ class Game:
         self.fired_events = set()  # HISTORY_EVENTS already delivered
         self._rumor_hit = None
         self.charter = None       # active delivery contract
+        self.mission = None       # seasonal timed obligation (extended)
         self.refits = set()       # dockyard upgrades owned
         self.rival = None         # rival firm's name (extended)
         self.bank_warning = None  # time a rumored bank panic breaks
+        self.career = "standard"  # "standard" | "dash" (extended)
+        self.career_months = FORCED_RETIREMENT_MONTHS
+        self.ports_blurbed = set()  # ports that got their personality line
+        # Voyage highlight reel (extended; tracked in all modes, shown
+        # only when extended ends - cheap bookkeeping, no classic RNG).
+        self.highlights = {
+            "biggest_haul": None,   # (label, amount)
+            "worst_loss": None,     # (label, amount)
+            "closest_escape": None,  # (label, damage_pct)
+        }
         # Achievement tracking (all modes).
         self.ever_debt = False
         self.feng_survived = False
@@ -265,6 +290,69 @@ class Game:
         """Append to the captain's log (shown at game end)."""
         self.journal.append({"when": self._time_str(), "text": text})
         del self.journal[:-400]
+
+    def _note_haul(self, label, amount):
+        amount = int(amount)
+        if amount <= 0:
+            return
+        cur = self.highlights["biggest_haul"]
+        if cur is None or amount > cur[1]:
+            self.highlights["biggest_haul"] = (label, amount)
+
+    def _note_loss(self, label, amount):
+        amount = int(amount)
+        if amount <= 0:
+            return
+        cur = self.highlights["worst_loss"]
+        if cur is None or amount > cur[1]:
+            self.highlights["worst_loss"] = (label, amount)
+
+    def _note_escape(self, label, damage_pct):
+        damage_pct = int(damage_pct)
+        cur = self.highlights["closest_escape"]
+        if cur is None or damage_pct > cur[1]:
+            self.highlights["closest_escape"] = (label, damage_pct)
+
+    def _mission_label(self, m=None):
+        m = m if m is not None else self.mission
+        if not m:
+            return None
+        return (f"{m['qty']} {ITEMS[m['item']]} to "
+                f"{LOCATIONS[m['dest']]} by {self._time_str(m['due'])} "
+                f"for {fancy(m['bonus'])}")
+
+    def _highlight_lines(self):
+        """Extended end-of-voyage highlight reel."""
+        lines = []
+        h = self.highlights
+        if h["biggest_haul"]:
+            label, amt = h["biggest_haul"]
+            lines.append(f"Biggest haul: {label} ({fancy(amt)})")
+        if h["worst_loss"]:
+            label, amt = h["worst_loss"]
+            lines.append(f"Worst blow: {label} ({fancy(amt)} lost)")
+        if h["closest_escape"]:
+            label, pct = h["closest_escape"]
+            lines.append(f"Closest escape: {label} "
+                         f"(ship at {100 - pct}% integrity)")
+        s = self.stats
+        if s["rival_undercuts"]:
+            lines.append(f"{self.rival} undercut you "
+                         f"{s['rival_undercuts']} time"
+                         f"{'s' if s['rival_undercuts'] != 1 else ''}")
+        if s["rival_battles_won"]:
+            lines.append(f"Drove off {self.rival}'s privateers "
+                         f"{s['rival_battles_won']} time"
+                         f"{'s' if s['rival_battles_won'] != 1 else ''}")
+        if s["missions_done"]:
+            lines.append(f"Seasonal missions completed: "
+                         f"{s['missions_done']}")
+        if s["rumors_true"]:
+            lines.append(f"True tavern rumors cashed in: "
+                         f"{s['rumors_true']}")
+        if s["charters_done"]:
+            lines.append(f"Charters fulfilled: {s['charters_done']}")
+        return lines
 
     def head(self, text):
         self.say(text, cls="head")
@@ -385,6 +473,9 @@ class Game:
                         f"{self._time_str(self.charter['due'])} for "
                         f"{fancy(self.charter['bonus'])}"
                         if self.charter else None),
+            "mission": self._mission_label(),
+            "rival": self.rival,
+            "career": self.career if self.extended else None,
             "refits": [REFITS[r][0] for r in sorted(self.refits)],
             "seen_prices": [
                 {"port": LOCATIONS[p], "here": p == self.port,
@@ -431,15 +522,46 @@ class Game:
             self.extended = self.mode == "extended"
         if self.extended:
             self.rival = RIVALS[self.r(3)]
+            c = yield from self._ask_choice(
+                "How long will you trade, Taipan?",
+                [{"key": "1",
+                  "label": "Full career - partners retire you after "
+                           "25 years"},
+                 {"key": "2",
+                  "label": "Five-year dash - forced retirement in "
+                           "Jan 1865"}])
+            if c == "2":
+                self.career = "dash"
+                self.career_months = FIVE_YEAR_DASH_MONTHS
+                self.say("Five years to make your name, Taipan. Sail "
+                         "hard.", cls="big")
+            else:
+                self.career = "standard"
+                self.career_months = FORCED_RETIREMENT_MONTHS
+        start_opts = [
+            {"key": "1", "label": "With cash (and a debt)"},
+            {"key": "2",
+             "label": "With five guns and no cash (but no debt!)"},
+        ]
+        if self.extended:
+            start_opts.append(
+                {"key": "3",
+                 "label": "Deep in debt - 200 cash, heavy Wu note "
+                          "(pressure run)"})
         c = yield from self._ask_choice(
-            "Do you want to start . . .",
-            [{"key": "1", "label": "With cash (and a debt)"},
-             {"key": "2", "label": "With five guns and no cash (but no debt!)"}])
+            "Do you want to start . . .", start_opts)
         if c == "1":
             self.cash, self.debt = 400, 5000
             self.hold, self.guns = 60, 0
             self.li, self.bp = 0, 10
             self.ever_debt = True
+        elif c == "3" and self.extended:
+            self.cash, self.debt = 200, 12000
+            self.hold, self.guns = 60, 0
+            self.li, self.bp = 0, 10
+            self.ever_debt = True
+            self.say("Elder Brother Wu's note is already heavy, "
+                     f"{self.firm}. Trade fast.", cls="warn")
         else:
             self.cash, self.debt = 0, 0
             self.hold, self.guns = 10, 5
@@ -496,6 +618,12 @@ class Game:
         if self.extended:
             yield from self._forced_retirement_check()
             yield from self._bank_crisis()
+            if (self.port not in self.ports_blurbed
+                    and self.port in PORT_BLURBS):
+                self.ports_blurbed.add(self.port)
+                self.head("Comprador's Report")
+                self.say(PORT_BLURBS[self.port])
+                yield from self._pause(1600)
         if self.port == 1:
             if self.li == 0 and self.cash > 0:
                 yield from self._li_yuen_extortion()
@@ -558,6 +686,9 @@ class Game:
             self.hold += self.hold_[0]
             self.hold_[0] = 0
             self.cash -= fine
+            if fine > 0:
+                self._note_loss(f"Opium seized in {LOCATIONS[self.port]}",
+                                fine)
             self.head("Comprador's Report")
             self.say("Bad Joss!!", cls="warn")
             if fine > 0:
@@ -571,13 +702,18 @@ class Game:
 
         # Warehouse theft (BASIC 2000)
         if sum(self.warehouse) > 0 and self.r(50) == 0:
+            stolen_units = 0
             for i in range(4):
+                before = self.warehouse[i]
                 self.warehouse[i] = int(self.warehouse[i] / 1.8
                                         * self.rand01())
+                stolen_units += before - self.warehouse[i]
             self.head("Comprador's Report")
             self.say(f"Messenger reports large theft from warehouse, "
                      f"{self.firm}.", cls="warn")
             self.log_event("Thieves plundered the Hong Kong warehouse.")
+            if stolen_units > 0:
+                self._note_loss("Warehouse theft", stolen_units)
             yield from self._ack()
 
         # Extended: the history of the 1860s unfolds around you.
@@ -603,34 +739,25 @@ class Game:
         # Extended: a rumor you followed here may pay off...
         if self._rumor_hit:
             self.head("Comprador's Report")
-            self.say(f"The tavern talk was true, {self.firm}!! "
-                     f"{ITEMS[self._rumor_hit['item']]} is dear here!")
+            self.say(f"The tavern talk was true, {self.firm}!!",
+                     cls="big")
+            self.say(f"{ITEMS[self._rumor_hit['item']]} is dear here - "
+                     f"the market sings!")
             self.log_event(f"A tavern rumor proved true: "
                            f"{ITEMS[self._rumor_hit['item']]} dear in "
                            f"{LOCATIONS[self.port]}.")
             self._rumor_hit = None
-            yield from self._pause()
+            yield from self._pause(2200)
 
-        # Extended: the rival firm makes its moves.
-        if self.extended and self.rival and self.r(8) == 0:
-            i = self.r(4)
-            self.head("Comprador's Report")
-            if self.r(2) == 0:
-                self.price[i] = max(1, int(self.price[i] * 0.55))
-                self.say(f"{self.rival}'s clipper beat us to port, "
-                         f"{self.firm} - {ITEMS[i]} prices have "
-                         f"slumped to {self.price[i]:,}!")
-            else:
-                self.price[i] *= 2
-                self.say(f"{self.rival}'s consignment of {ITEMS[i]} was "
-                         f"lost to pirates! The market is hungry - "
-                         f"prices have doubled to {fancy(self.price[i])}!")
-            self._record_seen()
-            yield from self._pause()
+        # Extended: the rival firm hunts your markets - and sometimes
+        # your hull.
+        if self.extended and self.rival:
+            yield from self._rival_events()
 
         # Extended: charter contracts - delivery, expiry, new offers.
         if self.extended:
             yield from self._check_charter()
+            yield from self._check_mission()
 
         # ...and new rumors circulate in the taverns.
         if self.extended:
@@ -685,6 +812,7 @@ class Game:
             robbed = int(self.rand01() * self.cash / 1.4)
             self.cash -= robbed
             self.stats["robbed"] += 1
+            self._note_loss(f"Robbed in {LOCATIONS[self.port]}", robbed)
             self.log_event(f"Beaten and robbed of {fancy(robbed)} in "
                            f"{LOCATIONS[self.port]}.")
             self.head("Comprador's Report")
@@ -694,17 +822,24 @@ class Game:
             yield from self._ack()
 
     def _forced_retirement_check(self):
-        """Extended: careers end. After 25 years the partners insist,
-        and the score is counted - idling forever is not a strategy."""
-        if self.extended and self.time > FORCED_RETIREMENT_MONTHS:
+        """Extended: careers end. After career_months the partners
+        insist (25 years standard, or Jan 1865 on a five-year dash)."""
+        if self.extended and self.time > self.career_months:
             self.head("Comprador's Report")
-            self.say(f"Twenty-five years at the helm, {self.firm}.",
-                     cls="big")
-            self.say("The partners insist the firm pass to younger "
-                     "hands. Your trading days are done - time to "
-                     "count your fortune.")
-            self.log_event("Retired after twenty-five years at the "
-                           "helm, as the partners insisted.")
+            if self.career == "dash":
+                self.say(f"Five years are up, {self.firm}.", cls="big")
+                self.say("The dash is done - time to count what you "
+                         "made of them.")
+                self.log_event("Five-year dash ended; the partners "
+                               "called time.")
+            else:
+                self.say(f"Twenty-five years at the helm, {self.firm}.",
+                         cls="big")
+                self.say("The partners insist the firm pass to younger "
+                         "hands. Your trading days are done - time to "
+                         "count your fortune.")
+                self.log_event("Retired after twenty-five years at the "
+                               "helm, as the partners insisted.")
             yield from self._pause(3200)
             raise _GameOver
 
@@ -723,6 +858,7 @@ class Game:
                 if loss > 0:
                     self.bank -= loss
                     self.stats["bank_lost"] += loss
+                    self._note_loss("Bank panic", loss)
                     self.log_event(f"Bank panic! The bank failed and "
                                    f"{fancy(loss)} of our deposits "
                                    f"vanished with it.")
@@ -746,6 +882,162 @@ class Game:
                      'within a season," they say.', cls="warn")
             yield from self._pause(2600)
 
+    def _rival_events(self):
+        """Extended: rival firm undercuts cargo you hold, snipes
+        charters, and may send privateers when you look prosperous."""
+        # Charter snipe: beat you to the buyer at the destination.
+        if (self.charter and self.port == self.charter["dest"]
+                and self.r(10) == 0):
+            c = self.charter
+            self.stats["charters_failed"] += 1
+            self.charter = None
+            self.log_event(f"{self.rival} snatched the charter to "
+                           f"{LOCATIONS[c['dest']]}.")
+            self.head("Comprador's Report")
+            self.say(f"Bad joss!! {self.rival} beat us to the buyer "
+                     f"in {LOCATIONS[c['dest']]} - the charter is "
+                     f"lost!", cls="warn")
+            yield from self._pause(2400)
+
+        if self.r(8) != 0:
+            return
+
+        # Privateers once you're rich enough to annoy them.
+        net = self.cash + self.bank - self.debt
+        if net >= 50_000 and self.r(5) == 0:
+            n = min(8 + self.r(8), MAX_GENERIC_FLEET)
+            self.head("Captain's Report")
+            self.say(f"{self.rival}'s privateers fly no colors, "
+                     f"{self.firm} - {n} sail bearing down!!",
+                     cls="warn")
+            yield from self._pause()
+            result = yield from self._sea_battle(GENERIC, n)
+            if result == BATTLE_WON:
+                self.stats["rival_battles_won"] += 1
+                self.cash += self.booty
+                self.stats["booty"] += self.booty
+                self._note_haul(f"Spoils from {self.rival}'s privateers",
+                                self.booty)
+                self.log_event(f"Drove off {self.rival}'s privateers; "
+                               f"booty {fancy(self.booty)}.")
+                self.head("Captain's Report")
+                self.say(f"{self.rival}'s dogs break and run! Booty "
+                         f"worth {fancy(self.booty)}.")
+                yield from self._pause(2400)
+            elif result == BATTLE_FLED:
+                pct = int(self.damage / max(1, self.capacity) * 100)
+                self._note_escape(f"Fled {self.rival}'s privateers", pct)
+                self.head("Captain's Report")
+                self.say(f"We slipped {self.rival}'s privateers, "
+                         f"{self.firm}!")
+                yield from self._pause()
+            elif result == BATTLE_LOST:
+                self.head("Captain's Report")
+                self.say(f"{self.rival}'s privateers got us, "
+                         f"{self.firm}!!!", cls="warn")
+                self.log_event(f"{self.rival}'s privateers took the ship.")
+                yield from self._pause(3000)
+                raise _GameOver
+            return
+
+        # Market move: prefer undercutting cargo you actually hold.
+        held = [i for i in range(4) if self.hold_[i] > 0]
+        if held and self.r(2) == 0:
+            i = held[self.r(len(held))]
+            self.price[i] = max(1, int(self.price[i] * 0.45))
+            self.stats["rival_undercuts"] += 1
+            self.head("Comprador's Report")
+            self.say(f"{self.rival} is dumping {ITEMS[i]} in "
+                     f"{LOCATIONS[self.port]}, {self.firm} - they "
+                     f"undercut our cargo! Price fallen to "
+                     f"{self.price[i]:,}!", cls="warn")
+            self.log_event(f"{self.rival} undercut our {ITEMS[i]} "
+                           f"in {LOCATIONS[self.port]}.")
+            self._record_seen()
+            yield from self._pause(2400)
+            return
+
+        i = self.r(4)
+        self.head("Comprador's Report")
+        if self.r(2) == 0:
+            self.price[i] = max(1, int(self.price[i] * 0.55))
+            self.stats["rival_undercuts"] += 1
+            self.say(f"{self.rival}'s clipper beat us to port, "
+                     f"{self.firm} - {ITEMS[i]} prices have "
+                     f"slumped to {self.price[i]:,}!")
+        else:
+            self.price[i] *= 2
+            self.say(f"{self.rival}'s consignment of {ITEMS[i]} was "
+                     f"lost to pirates! The market is hungry - "
+                     f"prices have doubled to {fancy(self.price[i])}!")
+        self._record_seen()
+        yield from self._pause()
+
+    def _check_mission(self):
+        """Extended: one seasonal timed obligation at a time."""
+        m = self.mission
+        if m:
+            if self.port == m["dest"] and self.hold_[m["item"]] >= m["qty"]:
+                self.hold_[m["item"]] -= m["qty"]
+                self.hold += m["qty"]
+                self.cash += m["bonus"]
+                self.stats["missions_done"] += 1
+                self._note_haul(m["title"], m["bonus"])
+                self.mission = None
+                self.log_event(f"Completed mission '{m['title']}': "
+                               f"{fancy(m['bonus'])}.")
+                self.head("Comprador's Report")
+                self.say(f"Mission fulfilled, {self.firm}!!", cls="big")
+                self.say(f"{m['qty']} {ITEMS[m['item']]} delivered to "
+                         f"{LOCATIONS[m['dest']]}. Reward: "
+                         f"{fancy(m['bonus'])}.")
+                yield from self._pause(2600)
+            elif self.time > m["due"]:
+                self.stats["missions_failed"] += 1
+                self.mission = None
+                self.log_event(f"Mission '{m['title']}' lapsed.")
+                self.head("Comprador's Report")
+                self.say(f"The season turns, {self.firm} - mission "
+                         f"'{m['title']}' has lapsed.", cls="warn")
+                yield from self._pause()
+        # Offer at most one; rarer than charters so they feel special.
+        if self.mission is None and self.r(6) == 0:
+            ports = [p for p in range(1, 8) if p != self.port]
+            dest = ports[self.r(6)]
+            item = self.r(4)
+            qty = self.r(max(1, self.capacity // 2)) + 15
+            due = self.time + VOYAGE_MONTHS[self.port][dest] + 2 + self.r(2)
+            unit_avg = self.base[item][0] * (self.base[item][dest] // 2) * 2
+            bonus = int(qty * unit_avg * 1.6) + self.r(800)
+            kind = self.r(3)
+            if kind == 0:
+                title = "Monsoon run"
+                blurb = (f"Deliver {qty} {ITEMS[item]} to "
+                         f"{LOCATIONS[dest]} before the monsoon "
+                         f"({self._time_str(due)}) for {fancy(bonus)}.")
+            elif kind == 1:
+                title = "Li Yuen's errand"
+                blurb = (f"Li Yuen's man wants {qty} {ITEMS[item]} in "
+                         f"{LOCATIONS[dest]} by {self._time_str(due)}. "
+                         f"He offers {fancy(bonus)} - and a nod of favor.")
+            else:
+                title = f"Race {self.rival}"
+                blurb = (f"Beat {self.rival} to {LOCATIONS[dest]} with "
+                         f"{qty} {ITEMS[item]} by {self._time_str(due)} "
+                         f"for {fancy(bonus)}.")
+            self.head("Comprador's Report")
+            if (yield from self._ask_yn(
+                    f"A seasonal mission, {self.firm}: {blurb} Accept?")):
+                self.mission = {
+                    "title": title, "item": item, "qty": qty,
+                    "dest": dest, "due": due, "bonus": bonus,
+                }
+                self.log_event(f"Accepted mission '{title}': "
+                               f"{self._mission_label()}.")
+                if kind == 1:
+                    # A nod of favor: small Li protection bump if paid later.
+                    pass
+
     def _check_charter(self):
         """Extended: settle the active charter, then maybe offer one."""
         c = self.charter
@@ -755,13 +1047,16 @@ class Game:
                 self.hold += c["qty"]
                 self.cash += c["bonus"]
                 self.stats["charters_done"] += 1
+                self._note_haul(f"Charter to {LOCATIONS[c['dest']]}",
+                                c["bonus"])
                 self.charter = None
                 self.log_event(f"Delivered {c['qty']} {ITEMS[c['item']]} "
                                f"to {LOCATIONS[c['dest']]} for "
                                f"{fancy(c['bonus'])}.")
                 self.head("Comprador's Report")
-                self.say(f"The charter is fulfilled, {self.firm}!! "
-                         f"{c['qty']} {ITEMS[c['item']]} delivered, and "
+                self.say(f"The charter is fulfilled, {self.firm}!!",
+                         cls="big")
+                self.say(f"{c['qty']} {ITEMS[c['item']]} delivered, and "
                          f"{fancy(c['bonus'])} paid in silver.")
                 yield from self._pause(2400)
             elif self.time > c["due"]:
@@ -1106,8 +1401,12 @@ class Game:
         self.hold_[i] -= amount
         self.cash += amount * self.price[i]
         self.hold += amount
-        self.stats["sold_value"] += amount * self.price[i]
+        proceeds = amount * self.price[i]
+        self.stats["sold_value"] += proceeds
         self.stats["sold_units"] += amount
+        if amount > 0:
+            self._note_haul(f"Sold {ITEMS[i]} in {LOCATIONS[self.port]}",
+                            proceeds)
 
     @staticmethod
     def _pct_presets(total):
@@ -1351,6 +1650,7 @@ class Game:
             self.say(f"It's worth {fancy(self.booty)}!")
             self.cash += self.booty
             self.stats["booty"] += self.booty
+            self._note_haul("Victory booty", self.booty)
             self.log_event(f"Victory at sea - booty worth "
                            f"{fancy(self.booty)}.")
             if self.prize > 0:
@@ -1360,11 +1660,14 @@ class Game:
                 self.cash += self.prize
                 self.stats["prizes"] += 1
                 self.stats["booty"] += self.prize
+                self._note_haul("Prize lorcha", self.prize)
                 self.log_event(f"Took a prize lorcha worth "
                                f"{fancy(self.prize)}.")
                 self.prize = 0
             yield from self._pause(2600)
         elif result == BATTLE_FLED:
+            pct = int(self.damage / max(1, self.capacity) * 100)
+            self._note_escape("Fled a pirate fleet", pct)
             self.head("Captain's Report")
             self.say(f"We made it, {self.firm}!")
             yield from self._pause()
@@ -1763,6 +2066,15 @@ class Game:
         if s["charters_done"] >= 3:
             add("charter_master", "Reliable as the Tide",
                 "Complete three charters")
+        if s["missions_done"] >= 3:
+            add("mission_man", "Season's Favorite",
+                "Complete three seasonal missions")
+        if s["rival_battles_won"] >= 1:
+            add("rival_rebuke", "Not So Fast",
+                f"Drive off {self.rival or 'a rival'}'s privateers")
+        if self.career == "dash" and score >= 1000:
+            add("dash_taipan", "Five-Year Wonder",
+                "Rate Taipan or better on a five-year dash")
         if "figurehead" in self.refits:
             add("figurehead", "A Fine Figurehead",
                 "Vanity befitting a Taipan")
@@ -1792,6 +2104,8 @@ class Game:
             rating = "Galley Hand"
         self.net_history.append([self.time, int(net)])
         self.head("Your final status:")
+        if self.extended and self.career == "dash":
+            self.say("Five-year dash complete.", cls="big")
         self.say(f"Net cash:  {fancy(net)}")
         self.say(f"Ship size: {self.capacity} units with {self.guns} guns")
         self.say(f"You traded for {years} year{'s' if years != 1 else ''} "
@@ -1829,12 +2143,25 @@ class Game:
         if self.extended and s["rumors_heard"]:
             self.say(f"Tavern rumors followed: {s['rumors_heard']} "
                      f"({s['rumors_true']} proved true)")
-        if self.extended and (s["charters_done"] or s["bribes"]):
+        if self.extended and (s["charters_done"] or s["bribes"]
+                              or s["missions_done"]):
             self.say(f"Charters fulfilled: {s['charters_done']} "
-                     f"(lapsed: {s['charters_failed']})   Harbor "
-                     f"masters bribed: {s['bribes']}")
+                     f"(lapsed: {s['charters_failed']})   Missions: "
+                     f"{s['missions_done']} "
+                     f"(lapsed: {s['missions_failed']})   "
+                     f"Harbor masters bribed: {s['bribes']}")
+        if self.extended and self.rival and (
+                s["rival_undercuts"] or s["rival_battles_won"]):
+            self.say(f"{self.rival}: undercut you "
+                     f"{s['rival_undercuts']}x, privateers beaten "
+                     f"{s['rival_battles_won']}x")
         if s["bank_lost"]:
             self.say(f"Lost to bank failures: {fancy(s['bank_lost'])}")
+        highlights = self._highlight_lines() if self.extended else []
+        if highlights:
+            self.head("Voyage highlights:")
+            for line in highlights:
+                self.say(f"* {line}")
         achievements = self._achievements(score, rating, net)
         if achievements:
             self.head("Honors earned:")
@@ -1843,7 +2170,9 @@ class Game:
         yield self._event({"kind": "end", "text": "Play again?",
                            "rating": rating, "score": score,
                            "mode": self.mode, "daily": self.daily,
+                           "career": self.career if self.extended else None,
                            "stats": s, "net_history": self.net_history,
                            "character": character,
                            "achievements": achievements,
+                           "highlights": highlights,
                            "journal": self.journal})

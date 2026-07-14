@@ -120,6 +120,8 @@ class RulesCaptain:
             # game setup
             if "How will you sail" in text:
                 return "1"                      # classic mode
+            if "How long will you trade" in text:
+                return "1"                      # full career
             if "Do you want to start" in text:
                 return "1"                      # cash and a debt
             # battle orders: fight if armed, otherwise run
