@@ -528,6 +528,52 @@ def test_drift_cap_extended_only():
     assert g.r(1000) == gc.r(1000)
 
 
+def test_ship_and_gun_offers_thinned_in_extended_only():
+    """Classic keeps the original 1-in-4 / 1-in-3 odds untouched.
+    Extended mode adds one more roll that can silently drop the
+    offer - so the same lucky roll that guarantees an offer in
+    classic can still be thinned away in extended."""
+    def make(mode, extra_roll):
+        g = Game(seed=1, mode=mode)
+        g.cash = 10**9
+        def fake_r(x):
+            if x in (4, 3):
+                return 0            # the original offer always fires
+            if x == 2:
+                return extra_roll   # extended's extra thinning roll
+            return 0                # the "amount" rolls: keep it simple
+        g.r = fake_r
+        return g
+
+    def offer_kinds(g):
+        """Drive the generator, declining every offer it makes."""
+        kinds = []
+        gen = g._ship_and_gun_offers()
+        try:
+            ev = next(gen)
+        except StopIteration:
+            return kinds
+        while True:
+            kinds.append(ev["prompt"]["kind"])
+            try:
+                ev = gen.send("n")
+            except StopIteration:
+                break
+        return kinds
+
+    # Classic: never consults the extra roll, both offers always appear.
+    gc = make("classic", extra_roll=1)
+    assert offer_kinds(gc) == ["choice", "choice"]
+
+    # Extended, extra roll fails both times: offers are dropped entirely.
+    ge = make("extended", extra_roll=1)
+    assert offer_kinds(ge) == []
+
+    # Extended, extra roll succeeds: offers still get through.
+    ge2 = make("extended", extra_roll=0)
+    assert offer_kinds(ge2) == ["choice", "choice"]
+
+
 def test_extended_caps_fleet_size_classic_does_not():
     from taipan.engine import (GENERIC, LI_YUEN, MAX_GENERIC_FLEET,
                                MAX_LI_YUEN_FLEET)
