@@ -530,8 +530,7 @@ def test_drift_cap_extended_only():
 
 def test_ship_and_gun_offers_same_odds_both_modes():
     """The original 1-in-4 / 1-in-3 chances are unchanged, and identical
-    in classic and extended - now that armed-up ships face tougher
-    pirates (_power_scaling), the offers themselves don't need thinning."""
+    in classic and extended."""
     def make(mode):
         g = Game(seed=1, mode=mode)
         g.cash = 10**9
@@ -579,20 +578,34 @@ def test_extended_caps_fleet_size_classic_does_not():
     assert big_li > MAX_LI_YUEN_FLEET
 
 
-def test_power_scaling_extended_only():
-    """Pirates scale with how out-armed you've gotten, in extended
-    only - so trading up to a bigger ship doesn't just make survival
-    easier. Classic always gets a flat 1.0 multiplier."""
-    g = Game(seed=1, mode="classic")
-    g.capacity, g.guns = 5000, 50
-    assert g._power_scaling() == 1.0
+def test_extended_caps_kills_per_round_classic_does_not():
+    """A ship with overwhelming guns can alpha-strike an entire fleet in
+    a single Fight order in classic (the original 1982 behavior, however
+    large the fleet) - but in extended, only the ~10 engaged ships can
+    be sunk per round, so a big fleet still gets to fire back."""
+    from taipan.engine import BATTLE_WON, GENERIC
 
-    ge = Game(seed=1, mode="extended")
-    ge.capacity, ge.guns = 60, 0            # starting loadout: no bonus
-    assert ge._power_scaling() == 1.0
-
-    ge.capacity, ge.guns = 460, 0            # 400 hold-equivalent bought
-    assert ge._power_scaling() == 2.0
+    for mode, wiped_in_one_round in (("classic", True), ("extended", False)):
+        g = Game(seed=1, mode=mode)
+        g.guns = 1000
+        g.capacity = 5000
+        g.hold = 0
+        gen = g._sea_battle(GENERIC, 50)
+        ev = next(gen)
+        assert ev["prompt"]["kind"] == "choice"       # orders prompt
+        v = "f"
+        finished = False
+        try:
+            while True:
+                ev = gen.send(v)
+                if ev["prompt"]["kind"] == "choice":
+                    break                # a second round's orders prompt
+                v = ""                   # acknowledge pauses in between
+        except StopIteration as stop:
+            finished, result = True, stop.value
+        assert finished == wiped_in_one_round
+        if finished:
+            assert result == BATTLE_WON
 
 
 def test_storm_ratio_floor_extended_only():

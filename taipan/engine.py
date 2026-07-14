@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 9
+ENGINE_VERSION = 10
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -1456,17 +1456,6 @@ class Game:
         n = self.r(self.capacity / 5 + self.guns) + 5
         return min(n, MAX_LI_YUEN_FLEET) if self.extended else n
 
-    def _power_scaling(self):
-        """Extended: pirates get tougher the more you've out-armed them,
-        not just with the calendar - so trading up to a bigger ship and
-        buying guns doesn't just make survival easier. 1.0 at the
-        starting loadout (60 hold-equivalent), rising with any capacity
-        or guns bought beyond it. Classic is unaffected."""
-        if not self.extended:
-            return 1.0
-        power = self.capacity + self.guns * 10
-        return 1.0 + max(0, power - 60) / 400
-
     def _storm_ratio(self):
         """Odds a storm sinks the ship scale with damage/capacity - so a
         huge, undamaged ship is normally almost storm-proof. Extended
@@ -1493,8 +1482,7 @@ class Game:
             on = sum(1 for hp in slots if hp > 0)
             for i in range(10):
                 if slots[i] == 0 and on < min(self.battle["ships"], 10):
-                    slots[i] = int(self.ec * self._power_scaling()
-                                  * self.rand01()) + 20
+                    slots[i] = int(self.ec * self.rand01()) + 20
                     on += 1
                     self.fx("appear", i)
 
@@ -1540,6 +1528,12 @@ class Game:
                     if self.battle["ships"] <= 0:
                         break
                     if not any(hp > 0 for hp in slots):
+                        # Extended: a fresh volley needs a new round, so
+                        # a big fleet can't be alpha-struck in one turn
+                        # no matter how many guns you're carrying -
+                        # classic keeps the original one-round wipeout.
+                        if self.extended:
+                            break
                         refill()
                     live = [i for i in range(10) if slots[i] > 0]
                     target = self.rng.choice(live)
@@ -1617,9 +1611,8 @@ class Game:
                 self.hold += 10
                 self.say(f"The buggers hit a gun, {self.firm}!!",
                          cls="warn")
-            self.damage += (self.rand01()
-                            * (self.ed * self._power_scaling() * i
-                               * battle_id) + i / 2)
+            self.damage += (self.rand01() * (self.ed * i * battle_id)
+                            + i / 2)
             yield from self._pause()
             if battle_id == GENERIC and self.r(20) == 0:
                 self.battle = None
