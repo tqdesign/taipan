@@ -14,3 +14,6 @@ saves/
 
 # Local staging for design assets (canonical copies live in static/)
 artifacts/
+
+# Browser smoke-test output
+screenshots/

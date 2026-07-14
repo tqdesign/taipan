@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync
+      - name: Engine and server tests
+        run: uv run pytest -q
+      - name: Frontend syntax check
+        run: node --check static/app.js
+
+  # Deploys to Fly only after tests pass, and only when the
+  # FLY_API_TOKEN repository secret is configured. To arm gated
+  # deploys (and stop deploying broken pushes):
+  #   1. Fly dashboard -> Tokens -> create a deploy token for the app
+  #   2. GitHub repo -> Settings -> Secrets -> add FLY_API_TOKEN
+  #   3. Fly dashboard -> app -> Settings: disconnect the GitHub
+  #      auto-deploy integration (it deploys on push regardless of CI)
+  # Until then, this job skips itself and Fly's own integration keeps
+  # deploying (ungated) while the test job still reports pass/fail.
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for deploy token
+        id: token
+        run: echo "have=${{ secrets.FLY_API_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      - name: No token - skipping gated deploy
+        if: steps.token.outputs.have != 'true'
+        run: echo "FLY_API_TOKEN not configured; Fly's GitHub integration handles deploys."
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.token.outputs.have == 'true'
+      - name: Deploy to Fly
+        if: steps.token.outputs.have == 'true'
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

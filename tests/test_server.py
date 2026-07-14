@@ -17,6 +17,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "CHALLENGE_DIR", save_dir / "challenges")
     monkeypatch.setattr(main, "SCORE_DETAIL_DIR",
                         save_dir / "scoredetails")
+    monkeypatch.setattr(main, "METRICS_FILE", save_dir / "metrics.json")
     monkeypatch.setattr(main, "HIGHSCORE_FILE",
                         save_dir / "highscores.json")
     monkeypatch.setattr(main, "DAILY_FILE", save_dir / "dailyscores.json")
@@ -254,6 +255,19 @@ def test_score_details_are_browsable(client):
     # unknown record 404s; malformed id rejected
     assert client.get(f"/api/score/{'0' * 32}").status_code == 404
     assert client.get("/api/score/nonsense").status_code == 400
+
+
+def test_metrics_count_games(client):
+    day = main.today()
+    client.post("/api/new", json={})
+    client.post("/api/new", json={})
+    m = client.get("/api/metrics").json()["days"]
+    assert m[day]["started"] == 2
+    assert m[day]["finished"] == 0
+    play_to_end(client, seed=11)
+    m = client.get("/api/metrics").json()["days"]
+    assert m[day]["started"] == 3
+    assert m[day]["finished"] == 1
 
 
 def test_version_endpoint(client):

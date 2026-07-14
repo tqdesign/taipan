@@ -1056,6 +1056,11 @@ document.addEventListener("keydown", (e) => {
       if (prompt.cancellable) send(CANCEL);
       else if (prompt.kind === "pause") send("");
     }
+    // Closing a modal shouldn't leave keyboard focus stuck on the
+    // button that opened it - else the next Enter re-clicks it.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     return;
   }
   if (optionsOpen() || scoresOpen() || journalOpen() || helpOpen()

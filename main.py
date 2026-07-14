@@ -43,6 +43,8 @@ SAVE_DIR = ROOT / "saves"
 CHALLENGE_DIR = SAVE_DIR / "challenges"
 SCORE_DETAIL_DIR = SAVE_DIR / "scoredetails"
 MAX_SCORE_DETAILS = 400
+METRICS_FILE = SAVE_DIR / "metrics.json"
+METRICS_DAYS = 30
 HIGHSCORE_FILE = SAVE_DIR / "highscores.json"
 DAILY_FILE = SAVE_DIR / "dailyscores.json"
 ACHIEVEMENT_FILE = SAVE_DIR / "achievements.json"
@@ -91,6 +93,7 @@ _sessions: dict[str, dict] = {}
 _registry_lock = threading.Lock()   # guards _sessions dict itself
 _score_lock = threading.Lock()      # guards the high-score files
 _challenge_lock = threading.Lock()  # guards challenge files
+_metrics_lock = threading.Lock()    # guards the metrics file
 _rate: dict[str, deque] = {}
 _rate_lock = threading.Lock()
 
@@ -389,6 +392,22 @@ def _record_highscore(event: dict):
 
 
 # ----------------------------------------------------------------------
+# Play metrics: how many games start and finish per day.
+
+def _bump_metric(key: str):
+    with _metrics_lock:
+        metrics = _load_json(METRICS_FILE, {})
+        day = today()
+        entry = metrics.setdefault(day, {"started": 0, "finished": 0})
+        entry[key] = entry.get(key, 0) + 1
+        for old in sorted(metrics)[:-METRICS_DAYS]:
+            del metrics[old]
+        SAVE_DIR.mkdir(exist_ok=True)
+        METRICS_FILE.write_text(json.dumps(metrics, indent=1),
+                                encoding="utf-8")
+
+
+# ----------------------------------------------------------------------
 # Challenges
 
 def _challenge_path(challenge_id: str) -> Path:
@@ -456,6 +475,7 @@ def new_game(req: NewRequest, request: Request):
             "challenge": req.challenge, "lock": threading.Lock()}
     _register(session_id, sess)
     _write_save(session_id, sess)
+    _bump_metric("started")
     return {"session_id": session_id, "event": event,
             "challenge": req.challenge}
 
@@ -483,6 +503,7 @@ def step(req: StepRequest, request: Request):
                 == "end" and not sess["scored"]):
             sess["scored"] = True
             _record_highscore(event)
+            _bump_metric("finished")
             if sess["challenge"]:
                 _record_attempt(sess["challenge"], event)
         _write_save(req.session_id, sess)
@@ -560,6 +581,12 @@ def score_detail(detail_id: str, request: Request):
     if not path.exists():
         raise HTTPException(404, "No such game record")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/metrics")
+def metrics():
+    with _metrics_lock:
+        return {"days": _load_json(METRICS_FILE, {})}
 
 
 @app.get("/api/highscores")
