@@ -528,21 +528,14 @@ def test_drift_cap_extended_only():
     assert g.r(1000) == gc.r(1000)
 
 
-def test_ship_and_gun_offers_thinned_in_extended_only():
-    """Classic keeps the original 1-in-4 / 1-in-3 odds untouched.
-    Extended mode adds one more roll that can silently drop the
-    offer - so the same lucky roll that guarantees an offer in
-    classic can still be thinned away in extended."""
-    def make(mode, extra_roll):
+def test_ship_and_gun_offers_same_odds_both_modes():
+    """The original 1-in-4 / 1-in-3 chances are unchanged, and identical
+    in classic and extended - now that armed-up ships face tougher
+    pirates (_power_scaling), the offers themselves don't need thinning."""
+    def make(mode):
         g = Game(seed=1, mode=mode)
         g.cash = 10**9
-        def fake_r(x):
-            if x in (4, 3):
-                return 0            # the original offer always fires
-            if x == 2:
-                return extra_roll   # extended's extra thinning roll
-            return 0                # the "amount" rolls: keep it simple
-        g.r = fake_r
+        g.r = lambda x: 0     # every roll succeeds, including the offers
         return g
 
     def offer_kinds(g):
@@ -561,17 +554,8 @@ def test_ship_and_gun_offers_thinned_in_extended_only():
                 break
         return kinds
 
-    # Classic: never consults the extra roll, both offers always appear.
-    gc = make("classic", extra_roll=1)
-    assert offer_kinds(gc) == ["choice", "choice"]
-
-    # Extended, extra roll fails both times: offers are dropped entirely.
-    ge = make("extended", extra_roll=1)
-    assert offer_kinds(ge) == []
-
-    # Extended, extra roll succeeds: offers still get through.
-    ge2 = make("extended", extra_roll=0)
-    assert offer_kinds(ge2) == ["choice", "choice"]
+    for mode in ("classic", "extended"):
+        assert offer_kinds(make(mode)) == ["choice", "choice"]
 
 
 def test_extended_caps_fleet_size_classic_does_not():

@@ -21,7 +21,7 @@ LI_YUEN = 2
 
 # Bumped whenever the flow of prompts or RNG draws changes; saved games
 # from another version are discarded rather than replayed into garbage.
-ENGINE_VERSION = 8
+ENGINE_VERSION = 9
 
 # Sent by the client when the player presses ESC on a cancellable
 # prompt; helpers then return None and the calling flow unwinds.
@@ -1000,20 +1000,17 @@ class Game:
 
     def _ship_and_gun_offers(self):
         """Trade-in offer for a bigger ship (BASIC 1610) and offer of a
-        ship's gun (BASIC 1710). Extended mode thins both out further
-        with an extra roll after the original odds - classic keeps the
-        original 1-in-4 / 1-in-3 chances untouched."""
+        ship's gun (BASIC 1710): the original 1-in-4 / 1-in-3 chances,
+        unchanged in both modes."""
         t = self.time
         amount = (int(1000 + self.r(1000 * (t + 5) / 6))
                   * ((self.capacity // 50) * (self.damage > 0) + 1))
         if self.cash >= amount and self.r(4) == 0:
-            if not self.extended or self.r(2) == 0:
-                yield from self._new_ship(amount)
+            yield from self._new_ship(amount)
 
         amount = self.r(1000 * (t + 5) / 6) + 500
         if self.cash >= amount and self.r(3) == 0:
-            if not self.extended or self.r(2) == 0:
-                yield from self._new_gun(amount)
+            yield from self._new_gun(amount)
 
     # ------------------------------------------------------------------
     # Port menu (BASIC 2510-2698)
